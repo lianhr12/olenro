@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Olenro
+Comment=All-in-One Assistant for Claude Code, Codex & Gemini CLI
+Exec=olenro
+Icon=com.olenro.desktop
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true

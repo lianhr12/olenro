@@ -1,0 +1,39 @@
+import React from "react";
+import { Badge } from "@/components/ui/badge";
+import type { AppId } from "@/lib/api/types";
+import { APP_IDS, APP_ICON_MAP } from "@/config/appConfig";
+
+interface AppCountBarProps {
+  totalLabel: string;
+  counts: Partial<Record<AppId, number>>;
+  appIds?: AppId[];
+}
+
+export const AppCountBar: React.FC<AppCountBarProps> = ({
+  totalLabel,
+  counts,
+  appIds = APP_IDS,
+}) => {
+  return (
+    <div className="flex items-center gap-3">
+      <Badge
+        variant="outline"
+        className="bg-background/60 text-xs font-medium h-6 shrink-0"
+      >
+        {totalLabel}
+      </Badge>
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        {appIds.map((app) => (
+          <Badge
+            key={app}
+            variant="secondary"
+            className={`h-6 ${APP_ICON_MAP[app].badgeClass}`}
+          >
+            <span className="opacity-75">{APP_ICON_MAP[app].label}:</span>
+            <span className="font-bold ml-0.5">{counts[app] ?? 0}</span>
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
+};
