@@ -16,7 +16,7 @@
     "test:unit:watch": "vitest watch"
   },
   "keywords": [],
-  "author": "Olenro Contributors",
+  "author": "Horace",
   "license": "MIT",
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.0",

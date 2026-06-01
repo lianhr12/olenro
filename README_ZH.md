@@ -400,4 +400,4 @@ pnpm test:unit --coverage
 
 ## License
 
-MIT © Jason Young
+MIT © Horace · 基于 [CC Switch](https://github.com/farion1231/cc-switch) © Jason Young

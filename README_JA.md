@@ -398,4 +398,4 @@ PR を送る前に以下をご確認ください：
 
 ## ライセンス
 
-MIT © Jason Young
+MIT © Horace · [CC Switch](https://github.com/farion1231/cc-switch) © Jason Young をベース

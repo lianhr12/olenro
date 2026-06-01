@@ -398,4 +398,4 @@ For new features, please open an issue for discussion before submitting a PR. PR
 
 ## License
 
-MIT © Jason Young
+MIT © Horace · based on [CC Switch](https://github.com/farion1231/cc-switch) © Jason Young

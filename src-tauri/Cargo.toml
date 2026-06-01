@@ -2,7 +2,7 @@
 name = "olenro"
 version = "1.0.0"
 description = "Olenro — Agent Workspace for AI Coding Tools (based on CC Switch, MIT)"
-authors = ["Jason Young", "Olenro Contributors"]
+authors = ["Jason Young", "Horace"]
 license = "MIT"
 repository = "https://github.com/lianhr12/olenro"
 edition = "2021"

@@ -398,4 +398,4 @@ Eröffnen Sie für neue Funktionen bitte vor dem Einreichen eines PR ein Issue z
 
 ## Lizenz
 
-MIT © Jason Young
+MIT © Horace · basiert auf [CC Switch](https://github.com/farion1231/cc-switch) © Jason Young
