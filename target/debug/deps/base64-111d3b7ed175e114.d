@@ -1,0 +1,12 @@
+/Users/hroace168/works/olenro/target/debug/deps/base64-111d3b7ed175e114.d: /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/lib.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/chunked_encoder.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/display.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/tables.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/write/mod.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/write/encoder.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/encode.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/decode.rs
+
+/Users/hroace168/works/olenro/target/debug/deps/libbase64-111d3b7ed175e114.rmeta: /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/lib.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/chunked_encoder.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/display.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/tables.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/write/mod.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/write/encoder.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/encode.rs /Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/decode.rs
+
+/Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/lib.rs:
+/Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/chunked_encoder.rs:
+/Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/display.rs:
+/Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/tables.rs:
+/Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/write/mod.rs:
+/Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/write/encoder.rs:
+/Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/encode.rs:
+/Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.11.0/src/decode.rs:

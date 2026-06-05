@@ -54,8 +54,70 @@ jobs:
       - name: Unit tests
         run: pnpm test:unit
 
+  rust-core:
+    name: Core Library Checks
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-workspace-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy on olenro-core
+        run: cargo clippy -p olenro-core -- -D warnings
+
+      - name: Run tests on olenro-core
+        run: cargo test -p olenro-core
+
+  rust-cli:
+    name: CLI Checks
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-workspace-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy on olenro-cli
+        run: cargo clippy -p olenro-cli -- -D warnings
+
+      - name: Build olenro-cli
+        run: cargo build -p olenro-cli
+
   backend:
-    name: Backend Checks
+    name: Backend Checks (Tauri)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout

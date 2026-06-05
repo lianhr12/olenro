@@ -1,0 +1,45 @@
+[package]
+name = "olenro-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Olenro CLI - Agent Workspace for AI Coding Tools (Terminal Edition)"
+
+[[bin]]
+name = "olenro"
+path = "src/main.rs"
+
+[dependencies]
+olenro-core.workspace = true
+
+# CLI framework
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
+clap_complete = "4.5"
+
+# Async runtime
+tokio.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+colored = "2"
+
+# Terminal output
+indicatif = "0.17"
+console = "0.15"
+
+# HTTP client (for proxy health checks)
+reqwest.workspace = true
+
+# Time
+chrono.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"

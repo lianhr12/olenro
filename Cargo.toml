@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = ["src-tauri", "crates/olenro-core", "crates/olenro-cli"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.85.0"
+authors = ["Horace"]
+
+[workspace.dependencies]
+# Shared dependencies across workspace members
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+thiserror = "2.0"
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+dirs = "5.0"
+reqwest = { version = "0.12", features = ["rustls-tls", "json", "stream", "socks"] }
+
+# Internal workspace packages
+olenro-core = { path = "crates/olenro-core" }

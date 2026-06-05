@@ -514,10 +514,67 @@ jobs:
             security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
           fi
 
+  build-cli:
+    name: Build CLI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            arch: arm64
+            target: aarch64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-14
+            target: x86_64-apple-darwin
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build CLI
+        run: |
+          cargo build --release -p olenro-cli --target ${{ matrix.target }}
+
+      - name: Prepare CLI artifact
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          VERSION="${GITHUB_REF_NAME}"
+          EXT=""
+          EXE="olenro"
+          case ${{ matrix.target }} in
+            *linux*)   ;;
+            *darwin*)   ;;
+            *windows*)  EXT=".exe";;
+          esac
+          cp "crates/olenro-cli/target/${{ matrix.target }}/release/olenro${EXT}" \
+             "release-assets/olenro-${VERSION}-${{ matrix.target }}${EXT}"
+          # Make Linux binary executable
+          if [[ "${{ matrix.target }}" == *linux* ]]; then
+            chmod +x "release-assets/olenro-${VERSION}-${{ matrix.target }}"
+          fi
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets-cli-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+
   publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-22.04
-    needs: release
+    needs: [release, build-cli]
     permissions:
       contents: write
     steps:
@@ -525,6 +582,13 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: release-assets-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-assets-cli-*
           path: release-assets
           merge-multiple: true
 
@@ -555,6 +619,16 @@ jobs:
             - **Linux (ARM64)**: `Olenro-${{ github.ref_name }}-Linux-arm64.AppImage` / `.deb` / `.rpm`
 
             > `.tar.gz` 为 Tauri updater 自动更新专用，无需手动下载。
+
+            ### CLI (命令行工具)
+
+            服务器/无界面环境可以使用 CLI 版本：
+
+            - **Linux x86_64**: `olenro-${VERSION}-x86_64-unknown-linux-gnu`
+            - **Linux ARM64**: `olenro-${VERSION}-aarch64-unknown-linux-gnu`
+            - **macOS ARM64**: `olenro-${VERSION}-aarch64-apple-darwin`
+            - **macOS x86_64**: `olenro-${VERSION}-x86_64-apple-darwin`
+            - **Windows**: `olenro-${VERSION}-x86_64-pc-windows-msvc.exe`
 
             ---
             macOS 版本已通过 Apple 代码签名和公证，可直接安装使用。
