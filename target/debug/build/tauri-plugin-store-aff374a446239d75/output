@@ -1,7 +1,0 @@
-cargo:rerun-if-changed=permissions
-cargo:PERMISSION_FILES_PATH=/Users/hroace168/works/olenro/target/debug/build/tauri-plugin-store-aff374a446239d75/out/tauri-plugin-store-permission-files
-cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS
-cargo:GLOBAL_API_SCRIPT_PATH=/Users/hroace168/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-store-2.4.3/api-iife.js
-cargo:rustc-check-cfg=cfg(mobile)
-cargo:rustc-check-cfg=cfg(desktop)
-cargo:rustc-cfg=desktop
