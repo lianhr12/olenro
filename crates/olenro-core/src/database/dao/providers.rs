@@ -21,7 +21,7 @@ impl<'a> ProvidersDao<'a> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, settings_config, website_url, category, created_at,
                     sort_index, notes, is_partner, meta, icon, icon_color, in_failover_queue
-             FROM providers ORDER BY sort_index ASC"
+             FROM providers ORDER BY sort_index ASC",
         )?;
 
         let providers = stmt
@@ -38,11 +38,10 @@ impl<'a> ProvidersDao<'a> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, settings_config, website_url, category, created_at,
                     sort_index, notes, is_partner, meta, icon, icon_color, in_failover_queue
-             FROM providers WHERE id = ?"
+             FROM providers WHERE id = ?",
         )?;
 
-        let mut rows = stmt.query(params![id])
-            .map_err(|e| AppError::Database(e))?;
+        let mut rows = stmt.query(params![id]).map_err(|e| AppError::Database(e))?;
 
         if let Some(row) = rows.next().map_err(|e| AppError::Database(e))? {
             Ok(Some(self.row_to_provider(row)?))
@@ -78,40 +77,46 @@ impl<'a> ProvidersDao<'a> {
 
     /// Update an existing provider
     pub fn update(&self, provider: &Provider) -> AppResult<()> {
-        self.conn.execute(
-            "UPDATE providers SET name = ?, settings_config = ?, website_url = ?,
+        self.conn
+            .execute(
+                "UPDATE providers SET name = ?, settings_config = ?, website_url = ?,
                                  category = ?, sort_index = ?, notes = ?, is_partner = ?,
                                  meta = ?, icon = ?, icon_color = ?, in_failover_queue = ?
              WHERE id = ?",
-            params![
-                provider.name,
-                serde_json::to_string(&provider.settings_config).unwrap_or_default(),
-                provider.website_url,
-                category_to_string(&provider.category),
-                provider.sort_index,
-                provider.notes,
-                provider.is_partner as i32,
-                serde_json::to_string(&provider.meta).unwrap_or_default(),
-                provider.icon,
-                provider.icon_color,
-                provider.in_failover_queue as i32,
-                provider.id,
-            ],
-        ).map_err(|e| AppError::Database(e))?;
+                params![
+                    provider.name,
+                    serde_json::to_string(&provider.settings_config).unwrap_or_default(),
+                    provider.website_url,
+                    category_to_string(&provider.category),
+                    provider.sort_index,
+                    provider.notes,
+                    provider.is_partner as i32,
+                    serde_json::to_string(&provider.meta).unwrap_or_default(),
+                    provider.icon,
+                    provider.icon_color,
+                    provider.in_failover_queue as i32,
+                    provider.id,
+                ],
+            )
+            .map_err(|e| AppError::Database(e))?;
         Ok(())
     }
 
     /// Delete a provider by ID
     pub fn delete(&self, id: &str) -> AppResult<()> {
-        self.conn.execute("DELETE FROM providers WHERE id = ?", params![id])
+        self.conn
+            .execute("DELETE FROM providers WHERE id = ?", params![id])
             .map_err(|e| AppError::Database(e))?;
         Ok(())
     }
 
     /// Get max sort_index
     pub fn get_max_sort_index(&self) -> AppResult<i32> {
-        let max: Option<i32> = self.conn
-            .query_row("SELECT MAX(sort_index) FROM providers", [], |row| row.get(0))
+        let max: Option<i32> = self
+            .conn
+            .query_row("SELECT MAX(sort_index) FROM providers", [], |row| {
+                row.get(0)
+            })
             .map_err(|e| AppError::Database(e))?;
         Ok(max.unwrap_or(0))
     }
@@ -122,28 +127,27 @@ impl<'a> ProvidersDao<'a> {
 
         let settings_config = serde_json::from_str(&settings_config_str)
             .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-        let meta: ProviderMeta = serde_json::from_str(&meta_str)
-            .unwrap_or(ProviderMeta {
-                custom_endpoints: None,
-                common_config_enabled: true,
-                claude_desktop_mode: None,
-                claude_desktop_model_routes: None,
-                usage_script: None,
-                endpoint_auto_select: None,
-                is_partner: None,
-                partner_promotion_key: None,
-                cost_multiplier: None,
-                pricing_model_source: None,
-                api_format: None,
-                auth_binding: None,
-                api_key_field: None,
-                is_full_url: true,
-                prompt_cache_key: None,
-                codex_fast_mode: None,
-                codex_chat_reasoning: None,
-                provider_type: None,
-                github_account_id: None,
-            });
+        let meta: ProviderMeta = serde_json::from_str(&meta_str).unwrap_or(ProviderMeta {
+            custom_endpoints: None,
+            common_config_enabled: true,
+            claude_desktop_mode: None,
+            claude_desktop_model_routes: None,
+            usage_script: None,
+            endpoint_auto_select: None,
+            is_partner: None,
+            partner_promotion_key: None,
+            cost_multiplier: None,
+            pricing_model_source: None,
+            api_format: None,
+            auth_binding: None,
+            api_key_field: None,
+            is_full_url: true,
+            prompt_cache_key: None,
+            codex_fast_mode: None,
+            codex_chat_reasoning: None,
+            provider_type: None,
+            github_account_id: None,
+        });
 
         let category_str: String = row.get(4).unwrap_or_default();
 

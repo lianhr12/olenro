@@ -2,11 +2,11 @@
 //!
 //! Provider adapter for Claude API
 
+use crate::error::{AppError, AppResult};
+use crate::proxy::providers::ProviderAdapter;
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::collections::HashMap;
-use crate::error::{AppError, AppResult};
-use crate::proxy::providers::ProviderAdapter;
 
 pub struct ClaudeAdapter;
 

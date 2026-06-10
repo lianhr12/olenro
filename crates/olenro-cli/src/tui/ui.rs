@@ -1,0 +1,802 @@
+//! TUI rendering functions
+
+use ratatui::{
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    Frame,
+};
+
+use crate::tui::state::{DialogMode, Tab, TuiState, CATEGORIES};
+
+/// Solid panel background so the terminal wallpaper/transparency does not
+/// bleed through and hurt readability.
+const BG: Color = Color::Rgb(18, 20, 28);
+
+/// A bordered panel block with a filled background and a title.
+fn panel(title: String) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .style(Style::default().bg(BG).fg(Color::White))
+}
+
+/// Main render function
+pub fn render(f: &mut Frame, state: &mut TuiState) {
+    // Paint a solid background across the whole screen first.
+    f.render_widget(Block::default().style(Style::default().bg(BG)), f.size());
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Title bar
+            Constraint::Length(3), // Tab bar
+            Constraint::Min(0),    // Content
+            Constraint::Length(3), // Status bar
+        ])
+        .split(f.size());
+
+    render_title(f, chunks[0]);
+    render_tabs(f, chunks[1], state);
+    render_content(f, chunks[2], state);
+    render_status(f, chunks[3], state);
+
+    // Overlay dialog on top of everything
+    if state.dialog_mode != DialogMode::None {
+        render_dialog(f, f.size(), state);
+    }
+}
+
+fn render_title(f: &mut Frame, area: Rect) {
+    let title = Paragraph::new("Olenro TUI  v1.0.0   [Tab/Shift+Tab] switch panel   [q] quit")
+        .style(
+            Style::default()
+                .bg(BG)
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(title, area);
+}
+
+fn render_tabs(f: &mut Frame, area: Rect, state: &TuiState) {
+    let tab_names = [
+        (Tab::Providers, "Providers"),
+        (Tab::Mcp, "MCP"),
+        (Tab::Prompts, "Prompts"),
+        (Tab::Skills, "Skills"),
+        (Tab::Sessions, "Sessions"),
+        (Tab::Usage, "Usage"),
+        (Tab::Proxy, "Proxy"),
+        (Tab::Settings, "Settings"),
+    ];
+
+    let mut spans: Vec<Span> = Vec::new();
+    for (tab, name) in tab_names {
+        let style = if state.current_tab == tab {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        spans.push(Span::styled(format!(" {} ", name), style));
+        spans.push(Span::raw(" "));
+    }
+
+    let tabs = Paragraph::new(Line::from(spans))
+        .style(Style::default().bg(BG))
+        .block(Block::default().borders(Borders::ALL).title(" Navigation "));
+    f.render_widget(tabs, area);
+}
+
+fn render_content(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    match state.current_tab {
+        Tab::Providers => render_providers(f, area, state),
+        Tab::Mcp => render_mcp(f, area, state),
+        Tab::Prompts => render_prompts(f, area, state),
+        Tab::Skills => render_skills(f, area, state),
+        Tab::Sessions => render_sessions(f, area, state),
+        Tab::Usage => render_usage(f, area, state),
+        Tab::Proxy => render_proxy(f, area, state),
+        Tab::Settings => render_settings(f, area, state),
+    }
+}
+
+/// Style for the currently-selected list row.
+fn row_style(selected: bool) -> Style {
+    if selected {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    }
+}
+
+fn render_providers(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    let providers = state.provider_service.list_providers().unwrap_or_default();
+
+    if providers.is_empty() {
+        render_empty(
+            f,
+            area,
+            " Providers ",
+            "No providers. Press [+]/[a] to add one.",
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = providers
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            let endpoint = p
+                .settings_config
+                .get("base_url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let content = format!("{}{} [{:?}]  {}", prefix, p.name, p.category, endpoint);
+            ListItem::new(content).style(row_style(selected))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " Providers ({})  [Enter/s] switch  [e] edit  [+] add  [d] delete ",
+            providers.len()
+        )));
+    f.render_widget(list, area);
+}
+
+fn render_mcp(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    let servers = state.mcp_service.list_servers().unwrap_or_default();
+
+    if servers.is_empty() {
+        render_empty(
+            f,
+            area,
+            " MCP Servers ",
+            "No MCP servers. Press [+]/[a] to add one.",
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = servers
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            let status = if s.enabled { "✓" } else { "✗" };
+            let args_str = s.args.join(" ");
+            let content = format!(
+                "{}{} {} - {} {}",
+                prefix, status, s.name, s.command, args_str
+            );
+            ListItem::new(content).style(row_style(selected))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " MCP Servers ({})  [Enter] toggle  [s] sync  [+] add  [d] delete ",
+            servers.len()
+        )));
+    f.render_widget(list, area);
+}
+
+fn render_prompts(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    let prompts = state.prompt_service.list_prompts().unwrap_or_default();
+
+    if prompts.is_empty() {
+        render_empty(
+            f,
+            area,
+            " Prompts ",
+            "No prompts. Press [+]/[a] to add one.",
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = prompts
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            let status = if p.enabled { "[ON] " } else { "[off]" };
+            let content = format!(
+                "{}{} {} ({} chars)",
+                prefix,
+                status,
+                p.name,
+                p.content.len()
+            );
+            ListItem::new(content).style(row_style(selected))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " Prompts ({})  [Enter/s] enable  [e] edit  [+] add  [d] delete ",
+            prompts.len()
+        )));
+    f.render_widget(list, area);
+}
+
+fn render_skills(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    let skills = state.skill_service.list_skills().unwrap_or_default();
+
+    if skills.is_empty() {
+        render_empty(
+            f,
+            area,
+            " Skills ",
+            "No skills. Press [+]/[a] to install one (owner/name).",
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = skills
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            let content = format!("{}{} v{}  ({})", prefix, s.name, s.version, s.path);
+            ListItem::new(content).style(row_style(selected))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " Skills ({})  [Enter/s] update  [+] install  [d] uninstall ",
+            skills.len()
+        )));
+    f.render_widget(list, area);
+}
+
+fn render_sessions(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    let sessions = state
+        .session_manager
+        .list_sessions(&olenro_core::provider::AppType::Claude)
+        .unwrap_or_default();
+
+    if sessions.is_empty() {
+        render_empty(
+            f,
+            area,
+            " Sessions ",
+            "No Claude sessions found under ~/.claude/projects.",
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = sessions
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            let cwd = s
+                .cwd
+                .as_deref()
+                .map(|c| truncate(c, 30))
+                .unwrap_or_default();
+            let content = format!(
+                "{}{:<40} {:>4} msgs  {}",
+                prefix,
+                truncate(&s.name, 40),
+                s.message_count,
+                cwd
+            );
+            ListItem::new(content).style(row_style(selected))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " Sessions ({})  [Enter] details  [r] resume  [d] delete ",
+            sessions.len()
+        )));
+    f.render_widget(list, area);
+}
+
+fn render_empty(f: &mut Frame, area: Rect, title: &str, msg: &str) {
+    let p = Paragraph::new(vec![Line::from(""), Line::from(format!("  {}", msg))])
+        .block(panel(title.to_string()))
+        .style(Style::default().bg(BG).fg(Color::DarkGray));
+    f.render_widget(p, area);
+}
+
+/// Render a horizontal ASCII bar of `count` units scaled against `max`.
+fn ascii_bar(count: usize, max: usize, width: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    let filled = (count * width) / max.max(1);
+    "█".repeat(filled.max(if count > 0 { 1 } else { 0 }))
+}
+
+fn render_usage(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    const DAYS: i32 = 30;
+    let summary = state.usage_service.summary(DAYS).unwrap_or_default();
+
+    let text: Vec<Line> = if summary.requests > 0 {
+        usage_with_data(state, DAYS, &summary)
+    } else {
+        usage_empty_state(state)
+    };
+
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(" Usage - Last {} Days ", DAYS)))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+/// Real usage rollups exist: render totals + per-provider request bars.
+fn usage_with_data<'a>(
+    state: &TuiState,
+    days: i32,
+    summary: &olenro_core::services::usage::UsageSummary,
+) -> Vec<Line<'a>> {
+    // Map provider id -> display name for nicer labels.
+    let providers = state.provider_service.list_providers().unwrap_or_default();
+    let name_of = |id: &str| -> String {
+        providers
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| id.to_string())
+    };
+
+    let mut text = vec![
+        Line::from(""),
+        Line::from("  Totals"),
+        Line::from(format!(
+            "  Requests: {}   Cost: {}   Input: {}   Output: {}",
+            summary.requests,
+            fmt_cost(summary.cost),
+            summary.input_tokens,
+            summary.output_tokens
+        )),
+        Line::from(""),
+        Line::from("  By Provider (requests / cost)"),
+    ];
+
+    let by_provider = state.usage_service.by_provider(days).unwrap_or_default();
+    let max = by_provider
+        .iter()
+        .map(|p| p.requests as usize)
+        .max()
+        .unwrap_or(0);
+    for p in &by_provider {
+        let bar = ascii_bar(p.requests as usize, max, 28);
+        let pct = if summary.requests > 0 {
+            (p.requests * 100) / summary.requests
+        } else {
+            0
+        };
+        text.push(Line::from(format!(
+            "  {:<16} {:<24} {} ({}%)  {}",
+            truncate(&name_of(&p.provider_id), 16),
+            bar,
+            p.requests,
+            pct,
+            fmt_cost(p.cost)
+        )));
+    }
+    text
+}
+
+/// Format a USD cost with adaptive precision so small amounts stay visible.
+fn fmt_cost(cost: f64) -> String {
+    if cost >= 1.0 {
+        format!("${:.2}", cost)
+    } else if cost >= 0.01 {
+        format!("${:.4}", cost)
+    } else {
+        format!("${:.6}", cost)
+    }
+}
+
+/// No usage recorded yet: show live resource counts instead of fabricated data.
+fn usage_empty_state<'a>(state: &TuiState) -> Vec<Line<'a>> {
+    let providers = state.provider_service.list_providers().unwrap_or_default();
+    let servers = state.mcp_service.list_servers().unwrap_or_default();
+    let prompts = state.prompt_service.list_prompts().unwrap_or_default();
+    let skills = state.skill_service.list_skills().unwrap_or_default();
+
+    let counts = [
+        ("Providers", providers.len()),
+        ("MCP Servers", servers.len()),
+        ("Prompts", prompts.len()),
+        ("Skills", skills.len()),
+    ];
+    let max = counts.iter().map(|(_, c)| *c).max().unwrap_or(0);
+
+    let mut text: Vec<Line> = vec![
+        Line::from(""),
+        Line::from("  No API usage recorded yet."),
+        Line::from(""),
+        Line::from("  Configured resources (live from database):"),
+        Line::from(""),
+    ];
+    for (label, count) in counts {
+        let bar = ascii_bar(count, max, 28);
+        text.push(Line::from(format!("  {:<12} {:<28} {}", label, bar, count)));
+    }
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "  Token/cost stats accrue once the local proxy records usage.",
+        Style::default().fg(Color::DarkGray),
+    )));
+    text
+}
+
+/// Truncate a string to `max` chars, appending an ellipsis when cut.
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let mut t: String = s.chars().take(max.saturating_sub(1)).collect();
+        t.push('…');
+        t
+    }
+}
+
+fn render_proxy(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    use olenro_core::proxy::ProxyStatus;
+
+    let status = state.proxy_service.status();
+    let cfg = state.proxy_service.config();
+    let (dot, label, color) = match status {
+        ProxyStatus::Running => ("●", "Running", Color::Green),
+        ProxyStatus::Starting => ("◐", "Starting", Color::Yellow),
+        ProxyStatus::Stopping => ("◑", "Stopping", Color::Yellow),
+        ProxyStatus::Stopped => ("○", "Stopped", Color::Gray),
+        ProxyStatus::Error => ("✗", "Error", Color::Red),
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from("  Local HTTP Proxy"),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Status:  "),
+            Span::styled(
+                format!("{} {}", dot, label),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(format!("  Port:    {}", cfg.port)),
+        Line::from(format!("  Address: {}", cfg.address)),
+        Line::from(format!("  URL:     http://{}:{}", cfg.address, cfg.port)),
+        Line::from(""),
+        {
+            let providers = state.provider_service.list_providers().unwrap_or_default();
+            match state.proxy_service.resolved_target() {
+                Some(t) => {
+                    let name = providers
+                        .iter()
+                        .find(|p| p.id == t.provider_id)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| t.provider_id.clone());
+                    Line::from(format!("  Forwarding to: {}  ({})", name, t.base_url))
+                }
+                None if status == ProxyStatus::Running => Line::from(Span::styled(
+                    "  No provider with an API key — add one in Providers to forward.",
+                    Style::default().fg(Color::Red),
+                )),
+                None => Line::from(Span::styled(
+                    "  Forwards to the first provider that has an API key.",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            }
+        },
+        {
+            use olenro_core::provider::AppType as ProviderAppType;
+            let taken = state.proxy_service.is_taken_over(ProviderAppType::Claude);
+            if taken {
+                Line::from(vec![
+                    Span::raw("  Takeover: "),
+                    Span::styled(
+                        "Claude ON",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "  (~/.claude points at this proxy)",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::raw("  Takeover: "),
+                    Span::styled("Claude off", Style::default().fg(Color::Gray)),
+                ])
+            }
+        },
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  [s] ", Style::default().fg(Color::Cyan)),
+            Span::raw("start proxy    "),
+            Span::styled("[x] ", Style::default().fg(Color::Cyan)),
+            Span::raw("stop proxy    "),
+            Span::styled("[t] ", Style::default().fg(Color::Cyan)),
+            Span::raw("toggle Claude takeover"),
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(" Proxy ".to_string()))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+fn render_settings(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    let db_path = state.db_path.to_string_lossy();
+    let config_dir = state
+        .db_path
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let text = vec![
+        Line::from(""),
+        Line::from("  Configuration"),
+        Line::from(""),
+        Line::from(format!("  Database:   {}", db_path)),
+        Line::from(format!("  Config Dir: {}", config_dir)),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Backup / restore / git-sync available via `olenro git-sync` and `olenro config`.",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(" Settings ".to_string()))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+fn render_status(f: &mut Frame, area: Rect, state: &TuiState) {
+    let help: &str = if state.dialog_mode != DialogMode::None {
+        "[Tab/Shift+Tab] field  [Enter] submit  [Esc] cancel"
+    } else {
+        match state.current_tab {
+            Tab::Providers => {
+                "[↑↓] select  [Enter/s] switch  [e] edit  [+] add  [d] delete  [Tab] panel  [q] quit"
+            }
+            Tab::Mcp => {
+                "[↑↓] select  [Enter] toggle  [s] sync  [+] add  [d] delete  [Tab] panel  [q] quit"
+            }
+            Tab::Prompts => {
+                "[↑↓] select  [Enter/s] enable  [e] edit  [+] add  [d] delete  [Tab] panel  [q] quit"
+            }
+            Tab::Skills => {
+                "[↑↓] select  [Enter/s] update  [+] install  [d] uninstall  [Tab] panel  [q] quit"
+            }
+            Tab::Sessions => {
+                "[↑↓] select  [Enter] details  [r] resume  [d] delete  [Tab] panel  [q] quit"
+            }
+            Tab::Proxy => "[s] start  [x] stop  [t] takeover  [Tab] panel  [q] quit",
+            // Read-only panels: don't advertise add/edit/delete.
+            Tab::Usage | Tab::Settings => "[Tab/Shift+Tab] switch panel  [q] quit",
+        }
+    };
+
+    let line = if state.status_message.is_empty() {
+        Line::from(Span::styled(
+            format!(" {}", help),
+            Style::default().fg(Color::Cyan),
+        ))
+    } else {
+        Line::from(vec![
+            Span::styled(
+                format!(" {} ", state.status_message),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!(" | {}", help), Style::default().fg(Color::Cyan)),
+        ])
+    };
+
+    let status = Paragraph::new(line)
+        .style(Style::default().bg(BG))
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(status, area);
+}
+
+/// Compute a centered rectangle of the given size within `area`.
+fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {
+    let popup_width = area.width * percent_x / 100;
+    let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    Rect {
+        x,
+        y,
+        width: popup_width,
+        height: height.min(area.height),
+    }
+}
+
+/// Render a labeled input field; highlights when active.
+fn field_line<'a>(label: &'a str, value: &'a str, active: bool) -> Line<'a> {
+    let label_style = if active {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+    let value_display = if active {
+        format!("{}_", value)
+    } else {
+        value.to_string()
+    };
+    Line::from(vec![
+        Span::styled(format!("  {:<10} ", label), label_style),
+        Span::raw(value_display),
+    ])
+}
+
+fn render_dialog(f: &mut Frame, area: Rect, state: &TuiState) {
+    let (title, lines, height): (&str, Vec<Line>, u16) = match &state.dialog_mode {
+        DialogMode::AddProvider => {
+            let cat = CATEGORIES[state.category_index].0;
+            (
+                " Add Provider ",
+                vec![
+                    Line::from(""),
+                    field_line("Name:", &state.name_input, state.input_field == 0),
+                    field_line("Endpoint:", &state.endpoint_input, state.input_field == 1),
+                    field_line("API Key:", &state.api_key_input, state.input_field == 2),
+                    {
+                        let active = state.input_field == 3;
+                        let style = if active {
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(Color::Gray)
+                        };
+                        Line::from(vec![
+                            Span::styled("  Category:  ", style),
+                            Span::raw(if active {
+                                format!("< {} >", cat)
+                            } else {
+                                cat.to_string()
+                            }),
+                        ])
+                    },
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        "  [Tab] next  [←/→] category  [Enter] save  [Esc] cancel",
+                        Style::default().fg(Color::DarkGray),
+                    )),
+                ],
+                10,
+            )
+        }
+        DialogMode::EditProvider(_) => (
+            " Edit Provider ",
+            vec![
+                Line::from(""),
+                field_line("Name:", &state.name_input, state.input_field == 0),
+                field_line("Endpoint:", &state.endpoint_input, state.input_field == 1),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Tab] next  [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            8,
+        ),
+        DialogMode::AddMcp => (
+            " Add MCP Server ",
+            vec![
+                Line::from(""),
+                field_line("Name:", &state.name_input, state.input_field == 0),
+                field_line("Command:", &state.command_input, state.input_field == 1),
+                field_line("Args:", &state.args_input, state.input_field == 2),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Args are space-separated.  [Tab] next  [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            9,
+        ),
+        DialogMode::AddPrompt => (
+            " Add Prompt ",
+            vec![
+                Line::from(""),
+                field_line("Name:", &state.name_input, state.input_field == 0),
+                field_line("Content:", &state.content_input, state.input_field == 1),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Tab] next  [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            8,
+        ),
+        DialogMode::EditPrompt(_) => (
+            " Edit Prompt ",
+            vec![
+                Line::from(""),
+                field_line("Content:", &state.content_input, true),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            7,
+        ),
+        DialogMode::AddSkill => (
+            " Install Skill ",
+            vec![
+                Line::from(""),
+                field_line("Repo:", &state.name_input, true),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Format: owner/name   [Enter] install  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            7,
+        ),
+        DialogMode::DeleteProvider(_)
+        | DialogMode::DeleteMcp(_)
+        | DialogMode::DeletePrompt(_)
+        | DialogMode::DeleteSkill(_)
+        | DialogMode::DeleteSession(_) => (
+            " Confirm Delete ",
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Are you sure you want to delete this item?",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Enter] confirm    [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            7,
+        ),
+        DialogMode::None => return,
+    };
+
+    let popup = centered_rect(60, height, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(Style::default().bg(Color::Rgb(30, 32, 44)))
+        .title(title);
+    let paragraph = Paragraph::new(lines)
+        .style(Style::default().bg(Color::Rgb(30, 32, 44)).fg(Color::White))
+        .block(block)
+        .alignment(Alignment::Left);
+    f.render_widget(paragraph, popup);
+}

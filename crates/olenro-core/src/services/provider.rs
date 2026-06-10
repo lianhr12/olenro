@@ -4,9 +4,9 @@
 
 use crate::database::dao::ProvidersDao;
 use crate::error::{AppError, AppResult};
-use crate::provider::{Provider, ProviderCategory, AppType};
-use std::sync::Arc;
+use crate::provider::{AppType, Provider, ProviderCategory};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Shared provider service
 pub type SharedProviderService = Arc<ProviderService>;
@@ -27,8 +27,10 @@ impl ProviderService {
     where
         F: FnOnce(&ProvidersDao) -> AppResult<T>,
     {
-        let conn = rusqlite::Connection::open(&self.db_path)
-            .map_err(|e| AppError::Database(e))?;
+        if let Some(parent) = self.db_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let conn = rusqlite::Connection::open(&self.db_path).map_err(|e| AppError::Database(e))?;
 
         // Initialize schema if needed - create tables if they don't exist
         let schema = r#"
@@ -92,10 +94,16 @@ impl ProviderService {
 
         // Build settings_config
         let mut settings = serde_json::Map::new();
-        settings.insert("base_url".to_string(), serde_json::Value::String(endpoint.to_string()));
+        settings.insert(
+            "base_url".to_string(),
+            serde_json::Value::String(endpoint.to_string()),
+        );
 
         if let Some(key) = api_key {
-            settings.insert("api_key".to_string(), serde_json::Value::String(key.to_string()));
+            settings.insert(
+                "api_key".to_string(),
+                serde_json::Value::String(key.to_string()),
+            );
         }
 
         let provider = Provider {
@@ -138,19 +146,187 @@ impl ProviderService {
         Ok(provider)
     }
 
-    /// Switch to a different provider for an app
-    pub fn switch_provider(&self, provider_id: &str, _app_type: AppType) -> AppResult<()> {
-        // For now, just verify the provider exists
-        let provider = self.get_provider(provider_id)?
+    /// Switch to a different provider for an app by writing its endpoint and
+    /// credentials into the target app's live configuration file.
+    ///
+    /// Currently only Claude Code (`~/.claude/settings.json`) is supported for
+    /// CLI/server use; other apps return an explanatory error rather than
+    /// silently doing nothing.
+    pub fn switch_provider(&self, provider_id: &str, app_type: AppType) -> AppResult<()> {
+        let provider = self
+            .get_provider(provider_id)?
             .ok_or_else(|| AppError::Provider(format!("Provider {} not found", provider_id)))?;
 
-        // TODO: Write to live config file for the target app
-        // This would involve:
-        // 1. Reading the app's current config
-        // 2. Updating the API endpoint and key
-        // 3. Writing back atomically
+        match app_type {
+            AppType::Claude => {
+                write_claude_live(&provider)?;
+                log::info!(
+                    "Switched Claude to provider: {} ({})",
+                    provider.name,
+                    provider_id
+                );
+                Ok(())
+            }
+            other => Err(AppError::Provider(format!(
+                "Live switch for {:?} is not yet supported in the CLI (only Claude). \
+                 Configure {:?} via the desktop app.",
+                other, other
+            ))),
+        }
+    }
+}
 
-        eprintln!("Switched to provider: {} ({})", provider.name, provider_id);
-        Ok(())
+/// Write a provider's endpoint + credentials into Claude Code's
+/// `~/.claude/settings.json`, merging with any existing settings so unrelated
+/// keys (permissions, mcpServers, other env vars) are preserved.
+fn write_claude_live(provider: &Provider) -> AppResult<()> {
+    use crate::config::{get_claude_settings_path, read_json_file, write_json_file};
+
+    let path = get_claude_settings_path();
+
+    // Load existing settings (preserve other keys) or start fresh.
+    let mut settings: serde_json::Value = if path.exists() {
+        read_json_file(&path).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    if !settings.is_object() {
+        settings = serde_json::json!({});
+    }
+
+    // Determine the env vars to apply: an explicit `env` block in the provider
+    // config wins; otherwise map base_url/api_key to Claude's env vars.
+    let new_env: Vec<(String, serde_json::Value)> = if let Some(env) = provider
+        .settings_config
+        .get("env")
+        .and_then(|e| e.as_object())
+    {
+        env.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    } else {
+        let mut out = Vec::new();
+        if let Some(base) = provider
+            .settings_config
+            .get("base_url")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            out.push((
+                "ANTHROPIC_BASE_URL".to_string(),
+                serde_json::Value::String(base.to_string()),
+            ));
+        }
+        if let Some(key) = provider
+            .settings_config
+            .get("api_key")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            out.push((
+                "ANTHROPIC_AUTH_TOKEN".to_string(),
+                serde_json::Value::String(key.to_string()),
+            ));
+        }
+        out
+    };
+
+    // Merge env into settings.env.
+    {
+        let obj = settings.as_object_mut().unwrap();
+        let env = obj.entry("env").or_insert_with(|| serde_json::json!({}));
+        if !env.is_object() {
+            *env = serde_json::json!({});
+        }
+        let env_obj = env.as_object_mut().unwrap();
+        for (k, v) in new_env {
+            env_obj.insert(k, v);
+        }
+    }
+
+    // Merge any additional non-internal top-level keys from the provider config
+    // (e.g. model, permissions) while skipping CLI-internal / already-handled ones.
+    if let Some(sc) = provider.settings_config.as_object() {
+        let obj = settings.as_object_mut().unwrap();
+        for (k, v) in sc {
+            if matches!(
+                k.as_str(),
+                "base_url"
+                    | "api_key"
+                    | "env"
+                    | "api_format"
+                    | "apiFormat"
+                    | "openrouter_compat_mode"
+                    | "openrouterCompatMode"
+            ) {
+                continue;
+            }
+            obj.insert(k.clone(), v.clone());
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(AppError::Io)?;
+    }
+    write_json_file(&path, &settings)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::ProviderCategory;
+
+    // Both phases mutate the process-global OLENRO_TEST_HOME, so they live in a
+    // single (serial) test to avoid racing other tests.
+    #[test]
+    fn switch_writes_and_merges_claude_live_config() {
+        let home = std::env::temp_dir().join(format!("olenro-switch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        // Pre-existing settings.json with unrelated keys to verify merge.
+        std::fs::write(
+            home.join(".claude").join("settings.json"),
+            r#"{"permissions":{"allow":["Bash"]},"env":{"FOO":"bar"}}"#,
+        )
+        .unwrap();
+        std::env::set_var("OLENRO_TEST_HOME", &home);
+
+        let db = home.join("olenro.db");
+        let svc = ProviderService::new(db.clone());
+        let provider = svc
+            .add_provider(
+                "My Claude",
+                "https://api.example.com",
+                ProviderCategory::Custom,
+                Some("sk-test-123"),
+            )
+            .unwrap();
+
+        svc.switch_provider(&provider.id, AppType::Claude).unwrap();
+
+        let settings_path = home.join(".claude").join("settings.json");
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+
+        // New credentials written.
+        assert_eq!(
+            v["env"]["ANTHROPIC_BASE_URL"].as_str(),
+            Some("https://api.example.com")
+        );
+        assert_eq!(
+            v["env"]["ANTHROPIC_AUTH_TOKEN"].as_str(),
+            Some("sk-test-123")
+        );
+        // Unrelated pre-existing keys preserved.
+        assert_eq!(v["permissions"]["allow"][0].as_str(), Some("Bash"));
+        assert_eq!(v["env"]["FOO"].as_str(), Some("bar"));
+
+        // Non-Claude apps return an explanatory error (not a silent no-op).
+        let err = svc
+            .switch_provider(&provider.id, AppType::Codex)
+            .unwrap_err();
+        assert!(format!("{}", err).contains("not yet supported"));
+
+        std::env::remove_var("OLENRO_TEST_HOME");
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

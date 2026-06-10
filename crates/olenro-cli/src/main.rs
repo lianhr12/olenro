@@ -6,9 +6,16 @@ mod commands;
 mod errors;
 mod output;
 mod state;
+mod tui;
 
 use clap::{Parser, Subcommand};
 use state::CliState;
+use std::env;
+
+/// Check if stdout is a TTY (interactive terminal)
+fn is_tty() -> bool {
+    atty::is(atty::Stream::Stdout) || atty::is(atty::Stream::Stderr)
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -25,43 +32,56 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Launch interactive TUI (Terminal User Interface)
+    Tui,
+    /// Manage AI providers
     Provider {
         #[command(subcommand)]
         subcommand: ProviderCommands,
     },
+    /// Manage local proxy
     Proxy {
         #[command(subcommand)]
         subcommand: ProxyCommands,
     },
+    /// Manage MCP servers
     Mcp {
         #[command(subcommand)]
         subcommand: McpCommands,
     },
+    /// Manage prompts
     Prompt {
         #[command(subcommand)]
         subcommand: PromptCommands,
     },
+    /// Manage skills
     Skill {
         #[command(subcommand)]
         subcommand: SkillCommands,
     },
+    /// Manage sessions
     Session {
         #[command(subcommand)]
         subcommand: SessionCommands,
     },
+    /// Show usage statistics
     Usage {
         #[command(subcommand)]
         subcommand: UsageCommands,
     },
+    /// Git sync operations
     GitSync {
         #[command(subcommand)]
         subcommand: GitSyncCommands,
     },
+    /// Configuration management
     Config {
         #[command(subcommand)]
         subcommand: ConfigCommands,
     },
+    /// System diagnostics
     Doctor,
+    /// Show version
     Version,
 }
 
@@ -252,19 +272,44 @@ enum ConfigCommands {
     Dir,
 }
 
+/// Launch the TUI on a blocking thread so its synchronous event loop can drive
+/// async service calls (proxy start/stop) via `Handle::block_on` without
+/// panicking on a runtime worker thread.
+async fn launch_tui() -> Result<(), Box<dyn std::error::Error>> {
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::spawn_blocking(move || tui::run(handle))
+        .await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli_state = CliState::new();
-
     let cli = Cli::parse();
 
+    // If no arguments and stdout is a TTY, launch TUI
+    if env::args().len() == 1 && is_tty() {
+        return launch_tui().await;
+    }
+
+    let cli_state = CliState::new();
+
     match cli.command {
+        Commands::Tui => {
+            return launch_tui().await;
+        }
         Commands::Provider { subcommand } => match subcommand {
             ProviderCommands::List { app } => commands::provider::list(app, &cli_state).await?,
-            ProviderCommands::Current { app } => commands::provider::current(&app, &cli_state).await?,
-            ProviderCommands::Add { name, app, endpoint, api_key } => {
-                commands::provider::add(&name, &app, &endpoint, api_key, &cli_state).await?
+            ProviderCommands::Current { app } => {
+                commands::provider::current(&app, &cli_state).await?
             }
+            ProviderCommands::Add {
+                name,
+                app,
+                endpoint,
+                api_key,
+            } => commands::provider::add(&name, &app, &endpoint, api_key, &cli_state).await?,
             ProviderCommands::Update { id, name, endpoint } => {
                 commands::provider::update(&id, name, endpoint, &cli_state).await?
             }
@@ -274,17 +319,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         Commands::Proxy { subcommand } => match subcommand {
-            ProxyCommands::Start { port, address } => commands::proxy::start(port, &address, &cli_state).await?,
+            ProxyCommands::Start { port, address } => {
+                commands::proxy::start(port, &address, &cli_state).await?
+            }
             ProxyCommands::Stop => commands::proxy::stop(&cli_state).await?,
             ProxyCommands::Status => commands::proxy::status(&cli_state).await?,
-            ProxyCommands::Takeover { app, action } => commands::proxy::takeover(&app, &action).await?,
+            ProxyCommands::Takeover { app, action } => {
+                commands::proxy::takeover(&app, &action).await?
+            }
             ProxyCommands::Failover => commands::proxy::failover(&cli_state).await?,
         },
         Commands::Mcp { subcommand } => match subcommand {
             McpCommands::List { app } => commands::mcp::list(app, &cli_state).await?,
-            McpCommands::Add { name, command, args, app } => {
-                commands::mcp::add(&name, &command, args, app, &cli_state).await?
-            }
+            McpCommands::Add {
+                name,
+                command,
+                args,
+                app,
+            } => commands::mcp::add(&name, &command, args, app, &cli_state).await?,
             McpCommands::Delete { id } => commands::mcp::delete(&id, &cli_state).await?,
             McpCommands::Sync { app } => commands::mcp::sync(&app, &cli_state).await?,
             McpCommands::SyncAll => commands::mcp::sync_all(&cli_state).await?,
@@ -294,13 +346,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             PromptCommands::Set { content, file, app } => {
                 commands::prompt::set(&content, file, app, &cli_state).await?
             }
-            PromptCommands::Get { file, app } => commands::prompt::get(file, app, &cli_state).await?,
+            PromptCommands::Get { file, app } => {
+                commands::prompt::get(file, app, &cli_state).await?
+            }
             PromptCommands::Delete { id } => commands::prompt::delete(&id, &cli_state).await?,
         },
         Commands::Skill { subcommand } => match subcommand {
             SkillCommands::List => commands::skill::list(&cli_state).await?,
             SkillCommands::Discover => commands::skill::discover().await?,
-            SkillCommands::Install { repo, apps } => commands::skill::install(&repo, apps, &cli_state).await?,
+            SkillCommands::Install { repo, apps } => {
+                commands::skill::install(&repo, apps, &cli_state).await?
+            }
             SkillCommands::Uninstall { id } => commands::skill::uninstall(&id, &cli_state).await?,
             SkillCommands::Update { id } => commands::skill::update(&id, &cli_state).await?,
             SkillCommands::Sync { app } => commands::skill::sync(&app, &cli_state).await?,

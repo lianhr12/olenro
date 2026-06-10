@@ -13,7 +13,10 @@ pub fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     // Calculate column widths
     let col_widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
     let col_widths: Vec<usize> = rows.iter().fold(col_widths, |acc, row| {
-        acc.iter().zip(row.iter()).map(|(a, b)| (*a).max(b.len())).collect()
+        acc.iter()
+            .zip(row.iter())
+            .map(|(a, b)| (*a).max(b.len()))
+            .collect()
     });
 
     // Print header

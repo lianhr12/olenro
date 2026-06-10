@@ -18,6 +18,9 @@ pub async fn pull() -> Result<()> {
 }
 
 pub async fn configure(repo: Option<String>, branch: &str) -> Result<()> {
-    println!("Configuring git sync (repo: {:?}, branch: {})...", repo, branch);
+    println!(
+        "Configuring git sync (repo: {:?}, branch: {})...",
+        repo, branch
+    );
     Ok(())
 }

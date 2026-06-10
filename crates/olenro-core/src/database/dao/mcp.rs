@@ -36,8 +36,7 @@ impl<'a> McpDao<'a> {
             "SELECT id, name, command, args, env, url, enabled, created_at, updated_at FROM mcp_servers WHERE id = ?"
         )?;
 
-        let mut rows = stmt.query(params![id])
-            .map_err(|e| AppError::Database(e))?;
+        let mut rows = stmt.query(params![id]).map_err(|e| AppError::Database(e))?;
 
         if let Some(row) = rows.next().map_err(|e| AppError::Database(e))? {
             Ok(Some(self.row_to_server(row)?))
@@ -92,7 +91,8 @@ impl<'a> McpDao<'a> {
 
     /// Delete a server
     pub fn delete(&self, id: &str) -> AppResult<()> {
-        self.conn.execute("DELETE FROM mcp_servers WHERE id = ?", params![id])
+        self.conn
+            .execute("DELETE FROM mcp_servers WHERE id = ?", params![id])
             .map_err(|e| AppError::Database(e))?;
         Ok(())
     }

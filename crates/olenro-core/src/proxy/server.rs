@@ -4,16 +4,10 @@
 
 use crate::error::{AppError, AppResult};
 use crate::proxy::{ProxyConfig, ProxyEvent, ProxyStatus};
-use axum::{
-    Router,
-    body::Body,
-    extract::Request,
-    response::Response,
-    middleware,
-};
+use axum::{body::Body, extract::Request, middleware, response::Response, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 

@@ -9,6 +9,7 @@ use indexmap::IndexMap;
 use rusqlite::{params, Connection};
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use tempfile::NamedTempFile;
 
 const LEGACY_SCHEMA_SQL: &str = r#"
@@ -120,6 +121,44 @@ const V3_8_SCHEMA_V1_SQL: &str = r#"
     );
 "#;
 
+const LEGACY_SCHEMA_WITHOUT_PROVIDER_APP_TYPE_SQL: &str = r#"
+    CREATE TABLE providers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        settings_config TEXT NOT NULL
+    );
+    CREATE TABLE provider_endpoints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_id TEXT NOT NULL,
+        url TEXT NOT NULL
+    );
+    CREATE TABLE mcp_servers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        server_config TEXT NOT NULL
+    );
+    CREATE TABLE prompts (
+        id TEXT NOT NULL,
+        app_type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        PRIMARY KEY (id, app_type)
+    );
+    CREATE TABLE skills (
+        key TEXT PRIMARY KEY,
+        installed BOOLEAN NOT NULL DEFAULT 0
+    );
+    CREATE TABLE skill_repos (
+        owner TEXT NOT NULL,
+        name TEXT NOT NULL,
+        PRIMARY KEY (owner, name)
+    );
+    CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    );
+"#;
+
 #[derive(Debug)]
 struct ColumnInfo {
     r#type: String,
@@ -222,6 +261,159 @@ fn schema_migration_adds_missing_columns_for_providers() {
         Database::get_user_version(&conn).expect("version after migration"),
         SCHEMA_VERSION
     );
+}
+
+#[test]
+fn schema_migration_repairs_legacy_providers_without_app_type() {
+    let conn = Connection::open_in_memory().expect("open memory db");
+    conn.execute_batch(LEGACY_SCHEMA_WITHOUT_PROVIDER_APP_TYPE_SQL)
+        .expect("seed legacy schema");
+    conn.execute(
+        "INSERT INTO providers (id, name, settings_config) VALUES (?1, ?2, ?3)",
+        params!["legacy-provider", "Legacy Provider", "{}"],
+    )
+    .expect("seed provider");
+    conn.execute(
+        "INSERT INTO provider_endpoints (provider_id, url) VALUES (?1, ?2)",
+        params!["legacy-provider", "https://example.com/api"],
+    )
+    .expect("seed endpoint");
+
+    Database::apply_schema_migrations_on_conn(&conn).expect("apply migrations");
+
+    assert!(
+        Database::has_column(&conn, "providers", "app_type").expect("check app_type"),
+        "providers.app_type should exist after migration"
+    );
+
+    let app_type: String = conn
+        .query_row(
+            "SELECT app_type FROM providers WHERE id = 'legacy-provider'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read migrated app_type");
+    assert_eq!(app_type, "claude");
+
+    let endpoint_app_type: String = conn
+        .query_row(
+            "SELECT app_type FROM provider_endpoints WHERE provider_id = 'legacy-provider'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read migrated endpoint app_type");
+    assert_eq!(endpoint_app_type, "claude");
+
+    let index_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_providers_failover'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count failover index");
+    assert_eq!(index_count, 1);
+}
+
+#[test]
+fn schema_migration_repairs_transitional_id_only_skills_table() {
+    let conn = Connection::open_in_memory().expect("open memory db");
+    Database::create_tables_on_conn(&conn).expect("create current tables");
+    conn.execute("DROP TABLE skills", []).expect("drop skills");
+    conn.execute(
+        "CREATE TABLE skills (
+            id TEXT PRIMARY KEY,
+            installed BOOLEAN NOT NULL DEFAULT 0,
+            installed_at INTEGER NOT NULL DEFAULT 0
+        )",
+        [],
+    )
+    .expect("create transitional skills");
+    conn.execute(
+        "INSERT INTO skills (id, installed, installed_at) VALUES (?1, ?2, ?3)",
+        params!["claude:demo-skill", 1, 1700000000i64],
+    )
+    .expect("seed transitional skill");
+    Database::set_user_version(&conn, 2).expect("set user_version=2");
+
+    Database::apply_schema_migrations_on_conn(&conn).expect("apply migrations");
+
+    assert!(
+        Database::has_column(&conn, "skills", "enabled_claude").expect("check skills v3 column"),
+        "skills table should be rebuilt to v3 structure"
+    );
+
+    let snapshot: String = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'skills_ssot_migration_snapshot'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read skills snapshot");
+    let snapshot_rows: serde_json::Value =
+        serde_json::from_str(&snapshot).expect("parse skills snapshot");
+    assert!(
+        snapshot_rows
+            .as_array()
+            .is_some_and(|rows| rows.iter().any(|row| {
+                row.get("directory").and_then(|v| v.as_str()) == Some("demo-skill")
+                    && row.get("app_type").and_then(|v| v.as_str()) == Some("claude")
+            })),
+        "id-only skills rows should be preserved in migration snapshot"
+    );
+}
+
+#[test]
+fn schema_migration_repairs_legacy_split_mcp_servers_table() {
+    let conn = Connection::open_in_memory().expect("open memory db");
+    Database::create_tables_on_conn(&conn).expect("create current tables");
+    conn.execute("DROP TABLE mcp_servers", [])
+        .expect("drop mcp_servers");
+    conn.execute(
+        "CREATE TABLE mcp_servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            command TEXT NOT NULL,
+            args TEXT NOT NULL DEFAULT '[]',
+            env TEXT NOT NULL DEFAULT '{}',
+            url TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )
+    .expect("create legacy mcp_servers");
+    conn.execute(
+        "INSERT INTO mcp_servers (id, name, command, args, env, url, enabled, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            "filesystem",
+            "Filesystem",
+            "npx",
+            r#"["-y","@modelcontextprotocol/server-filesystem"]"#,
+            r#"{"ROOT":"/tmp"}"#,
+            Option::<String>::None,
+            1,
+            1700000000i64,
+            1700000001i64,
+        ],
+    )
+    .expect("seed legacy mcp server");
+    Database::set_user_version(&conn, 0).expect("set user_version=0");
+
+    Database::apply_schema_migrations_on_conn(&conn).expect("apply migrations");
+
+    let db = Database {
+        conn: Mutex::new(conn),
+    };
+    let servers = db.get_all_mcp_servers().expect("read mcp servers");
+    let server = servers.get("filesystem").expect("filesystem server");
+
+    assert_eq!(server.name, "Filesystem");
+    assert_eq!(server.server["command"], "npx");
+    assert_eq!(server.server["args"][0], "-y");
+    assert_eq!(server.server["env"]["ROOT"], "/tmp");
+    assert!(server.apps.claude);
 }
 
 #[test]

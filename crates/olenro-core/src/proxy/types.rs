@@ -84,16 +84,9 @@ pub struct FailoverQueueItem {
 #[derive(Debug, Clone)]
 pub enum ProxyEvent {
     /// A provider was switched
-    ProviderSwitched {
-        app: String,
-        provider_id: String,
-    },
+    ProviderSwitched { app: String, provider_id: String },
     /// Circuit breaker opened for a provider
-    CircuitBreakerOpened {
-        provider_id: String,
-    },
+    CircuitBreakerOpened { provider_id: String },
     /// Proxy error occurred
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }

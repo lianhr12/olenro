@@ -1,26 +1,34 @@
 //! MCP commands
 
+use crate::errors::Result;
 use crate::output::print_table;
 use crate::state::CliState;
-use crate::errors::Result;
 use std::collections::HashMap;
 
 pub async fn list(app: Option<String>, state: &CliState) -> Result<()> {
-    println!("Listing MCP servers{}...", app.map(|a| format!(" for {}", a)).unwrap_or_default().as_str());
+    println!(
+        "Listing MCP servers{}...",
+        app.map(|a| format!(" for {}", a))
+            .unwrap_or_default()
+            .as_str()
+    );
 
     match state.mcp.list_servers() {
         Ok(servers) => {
             if servers.is_empty() {
                 println!("(empty)");
             } else {
-                let rows: Vec<Vec<String>> = servers.iter().map(|s| {
-                    vec![
-                        s.id.clone(),
-                        s.name.clone(),
-                        s.command.clone(),
-                        if s.enabled { "✓" } else { "✗" }.to_string(),
-                    ]
-                }).collect();
+                let rows: Vec<Vec<String>> = servers
+                    .iter()
+                    .map(|s| {
+                        vec![
+                            s.id.clone(),
+                            s.name.clone(),
+                            s.command.clone(),
+                            if s.enabled { "✓" } else { "✗" }.to_string(),
+                        ]
+                    })
+                    .collect();
                 print_table(&["ID", "Name", "Command", "Enabled"], &rows);
             }
         }
@@ -31,14 +39,23 @@ pub async fn list(app: Option<String>, state: &CliState) -> Result<()> {
     Ok(())
 }
 
-pub async fn add(name: &str, command: &str, args: Option<String>, _app: Option<String>, state: &CliState) -> Result<()> {
+pub async fn add(
+    name: &str,
+    command: &str,
+    args: Option<String>,
+    _app: Option<String>,
+    state: &CliState,
+) -> Result<()> {
     println!("Adding MCP server '{}' with {}...", name, command);
 
     let args_vec: Vec<String> = args
         .map(|a| a.split_whitespace().map(String::from).collect())
         .unwrap_or_default();
 
-    match state.mcp.add_server(name, command, args_vec, HashMap::new(), None) {
+    match state
+        .mcp
+        .add_server(name, command, args_vec, HashMap::new(), None)
+    {
         Ok(server) => {
             println!("✓ Added MCP server: {} ({})", server.name, server.id);
         }

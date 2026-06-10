@@ -5,7 +5,7 @@
 use crate::app_config::AppType;
 use crate::database::dao::PromptsDao;
 use crate::error::{AppError, AppResult};
-use crate::prompt::{Prompt, CreatePromptInput};
+use crate::prompt::{CreatePromptInput, Prompt};
 use crate::prompt_files;
 use std::path::PathBuf;
 
@@ -23,8 +23,10 @@ impl PromptService {
     where
         F: FnOnce(&PromptsDao) -> AppResult<T>,
     {
-        let conn = rusqlite::Connection::open(&self.db_path)
-            .map_err(|e| AppError::Database(e))?;
+        if let Some(parent) = self.db_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let conn = rusqlite::Connection::open(&self.db_path).map_err(|e| AppError::Database(e))?;
 
         // Initialize schema if needed
         let schema = r#"

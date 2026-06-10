@@ -102,6 +102,8 @@ pub fn get_claude_settings_path() -> PathBuf {
 
 /// 应用数据库文件名（Olenro）。
 pub const DB_FILENAME: &str = "olenro.db";
+/// CLI 专用数据库文件名。
+pub const CLI_DB_FILENAME: &str = "olenro-cli.db";
 /// 旧版 CC Switch 数据库文件名，仅用于首次启动时的一次性迁移识别。
 const LEGACY_DB_FILENAME: &str = "cc-switch.db";
 
@@ -113,11 +115,37 @@ pub fn get_app_config_dir() -> PathBuf {
     get_home_dir().join(".olenro")
 }
 
+/// 获取桌面 App 数据库路径。
+pub fn get_app_database_path() -> PathBuf {
+    get_app_config_dir().join(DB_FILENAME)
+}
+
+/// 获取 CLI 专用配置目录路径 (~/.olenro-cli)。
+pub fn get_cli_config_dir() -> PathBuf {
+    if let Some(custom) = get_cli_config_dir_override() {
+        return custom;
+    }
+    get_home_dir().join(".olenro-cli")
+}
+
+/// 获取 CLI 专用数据库路径。
+pub fn get_cli_database_path() -> PathBuf {
+    get_cli_config_dir().join(CLI_DB_FILENAME)
+}
+
 /// 获取用户设置的应用配置目录覆盖（如果有）
 fn get_app_config_dir_override() -> Option<PathBuf> {
     // TODO: 从环境变量或配置文件读取自定义目录设置
     // For now, check OLENRO_HOME env var
     std::env::var("OLENRO_HOME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
+/// 获取用户设置的 CLI 配置目录覆盖（如果有）。
+fn get_cli_config_dir_override() -> Option<PathBuf> {
+    std::env::var("OLENRO_CLI_HOME")
         .ok()
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
@@ -154,8 +182,7 @@ pub fn migrate_legacy_config_dir_if_needed() {
     // 先就地重命名为 olenro.db，避免代码新建空库、看起来像"数据丢失"。
     rename_legacy_db_files(&new_dir);
 
-    let new_has_data =
-        new_dir.join("config.json").exists() || new_dir.join(DB_FILENAME).exists();
+    let new_has_data = new_dir.join("config.json").exists() || new_dir.join(DB_FILENAME).exists();
     if new_has_data {
         return;
     }
@@ -250,7 +277,8 @@ pub fn read_json_file<T: for<'a> Deserialize<'a>>(path: &Path) -> AppResult<T> {
         return Err(AppError::Config(format!("文件不存在: {}", path.display())));
     }
     let content = fs::read_to_string(path)?;
-    serde_json::from_str(&content).map_err(|e| AppError::Config(format!("JSON 解析失败 {}: {e}", path.display())))
+    serde_json::from_str(&content)
+        .map_err(|e| AppError::Config(format!("JSON 解析失败 {}: {e}", path.display())))
 }
 
 /// 递归排序 JSON 对象的键（按字母顺序），确保序列化输出是确定性的
@@ -274,10 +302,12 @@ fn sort_json_keys(value: &Value) -> Value {
 pub fn write_json_file<T: Serialize>(path: &Path, data: &T) -> AppResult<()> {
     // 确保目录存在
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| AppError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("创建目录失败 {}: {e}", parent.display()),
-        )))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            AppError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("创建目录失败 {}: {e}", parent.display()),
+            ))
+        })?;
     }
 
     let value = serde_json::to_value(data).map_err(|e| AppError::Json(e))?;
@@ -289,10 +319,12 @@ pub fn write_json_file<T: Serialize>(path: &Path, data: &T) -> AppResult<()> {
 /// 原子写入文本文件（用于 TOML/纯文本）
 pub fn write_text_file(path: &Path, data: &str) -> AppResult<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| AppError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("创建目录失败 {}: {e}", parent.display()),
-        )))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            AppError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("创建目录失败 {}: {e}", parent.display()),
+            ))
+        })?;
     }
     atomic_write(path, data.as_bytes())
 }
@@ -300,13 +332,17 @@ pub fn write_text_file(path: &Path, data: &str) -> AppResult<()> {
 /// 原子写入：写入临时文件后 rename 替换，避免半写状态
 pub fn atomic_write(path: &Path, data: &[u8]) -> AppResult<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| AppError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("创建目录失败 {}: {e}", parent.display()),
-        )))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            AppError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("创建目录失败 {}: {e}", parent.display()),
+            ))
+        })?;
     }
 
-    let parent = path.parent().ok_or_else(|| AppError::Config("无效的路径".to_string()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::Config("无效的路径".to_string()))?;
     let mut tmp = parent.to_path_buf();
     let file_name = path
         .file_name()
@@ -401,6 +437,35 @@ mod tests {
     }
 
     #[test]
+    fn cli_database_path_is_separate_from_app_database_path() {
+        let old_home = std::env::var_os("OLENRO_TEST_HOME");
+        let home = std::env::temp_dir().join(format!(
+            "olenro_cli_db_path_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::env::set_var("OLENRO_TEST_HOME", &home);
+
+        assert_eq!(
+            get_app_database_path(),
+            home.join(".olenro").join("olenro.db")
+        );
+        assert_eq!(
+            get_cli_database_path(),
+            home.join(".olenro-cli").join("olenro-cli.db")
+        );
+        assert_ne!(get_cli_database_path(), get_app_database_path());
+
+        match old_home {
+            Some(value) => std::env::set_var("OLENRO_TEST_HOME", value),
+            None => std::env::remove_var("OLENRO_TEST_HOME"),
+        }
+    }
+
+    #[test]
     fn sort_json_keys_sorts_top_level_object() {
         let input = serde_json::json!({
             "z": 1,
@@ -437,7 +502,10 @@ mod tests {
 
         // config.json 被跳过；cc-switch.db 与 logs/a.log 被复制 = 2
         assert_eq!(copied, 2);
-        assert_eq!(fs::read_to_string(to.join("config.json")).unwrap(), "existing");
+        assert_eq!(
+            fs::read_to_string(to.join("config.json")).unwrap(),
+            "existing"
+        );
         assert_eq!(fs::read_to_string(to.join("cc-switch.db")).unwrap(), "db");
         assert_eq!(fs::read_to_string(to.join("logs/a.log")).unwrap(), "log");
 

@@ -421,7 +421,8 @@ fn collect_files_recursive(
     current: &Path,
     files: &mut Vec<SkillFileInfo>,
 ) -> Result<(), String> {
-    let entries = std::fs::read_dir(current).map_err(|e| format!("Failed to read directory: {e}"))?;
+    let entries =
+        std::fs::read_dir(current).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -593,8 +594,8 @@ pub fn read_skill_file(
     let full_path = validate_skill_file_path(&skill_dir, &file_path)?;
 
     // 文件大小限制：1MB
-    let meta = std::fs::metadata(&full_path)
-        .map_err(|e| format!("Failed to read file metadata: {e}"))?;
+    let meta =
+        std::fs::metadata(&full_path).map_err(|e| format!("Failed to read file metadata: {e}"))?;
     if meta.len() > 1024 * 1024 {
         return Err("File too large (>1MB)".to_string());
     }

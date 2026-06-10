@@ -39,6 +39,11 @@ chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+# TUI (Terminal UI)
+ratatui = "0.26"
+crossterm = "0.28"
+atty = "0.2"
+
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"

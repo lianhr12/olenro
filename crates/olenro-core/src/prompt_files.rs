@@ -45,9 +45,8 @@ fn get_hermes_config_dir() -> PathBuf {
 
 /// Read current prompt file content
 pub fn read_prompt_file(app_type: &AppType) -> AppResult<Option<String>> {
-    let path = get_prompt_file_path(app_type).ok_or_else(|| {
-        AppError::Prompt(format!("Prompts not supported for {:?}", app_type))
-    })?;
+    let path = get_prompt_file_path(app_type)
+        .ok_or_else(|| AppError::Prompt(format!("Prompts not supported for {:?}", app_type)))?;
 
     if !path.exists() {
         return Ok(None);
@@ -60,9 +59,8 @@ pub fn read_prompt_file(app_type: &AppType) -> AppResult<Option<String>> {
 
 /// Write prompt file content
 pub fn write_prompt_file(app_type: &AppType, content: &str) -> AppResult<()> {
-    let path = get_prompt_file_path(app_type).ok_or_else(|| {
-        AppError::Prompt(format!("Prompts not supported for {:?}", app_type))
-    })?;
+    let path = get_prompt_file_path(app_type)
+        .ok_or_else(|| AppError::Prompt(format!("Prompts not supported for {:?}", app_type)))?;
 
     crate::config::atomic_write(&path, content.as_bytes())
 }

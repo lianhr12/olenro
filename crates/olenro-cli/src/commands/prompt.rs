@@ -1,8 +1,8 @@
 //! Prompt commands
 
+use crate::errors::Result;
 use crate::output::print_table;
 use crate::state::CliState;
-use crate::errors::Result;
 use olenro_core::provider::AppType;
 use std::collections::HashMap;
 
@@ -14,14 +14,17 @@ pub async fn list(_app: Option<String>, state: &CliState) -> Result<()> {
             if prompts.is_empty() {
                 println!("(empty)");
             } else {
-                let rows: Vec<Vec<String>> = prompts.iter().map(|p| {
-                    vec![
-                        p.id.clone(),
-                        p.name.clone(),
-                        if p.enabled { "✓" } else { "✗" }.to_string(),
-                        format!("{} chars", p.content.len()),
-                    ]
-                }).collect();
+                let rows: Vec<Vec<String>> = prompts
+                    .iter()
+                    .map(|p| {
+                        vec![
+                            p.id.clone(),
+                            p.name.clone(),
+                            if p.enabled { "✓" } else { "✗" }.to_string(),
+                            format!("{} chars", p.content.len()),
+                        ]
+                    })
+                    .collect();
                 print_table(&["ID", "Name", "Enabled", "Size"], &rows);
             }
         }
@@ -32,7 +35,12 @@ pub async fn list(_app: Option<String>, state: &CliState) -> Result<()> {
     Ok(())
 }
 
-pub async fn set(content: &str, _file: Option<String>, app: Option<String>, state: &CliState) -> Result<()> {
+pub async fn set(
+    content: &str,
+    _file: Option<String>,
+    app: Option<String>,
+    state: &CliState,
+) -> Result<()> {
     let app_str = app.as_deref().unwrap_or("claude");
 
     let app_type = match app_str {

@@ -22,8 +22,10 @@ impl SkillService {
     where
         F: FnOnce(&SkillsDao) -> AppResult<T>,
     {
-        let conn = rusqlite::Connection::open(&self.db_path)
-            .map_err(|e| AppError::Database(e))?;
+        if let Some(parent) = self.db_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let conn = rusqlite::Connection::open(&self.db_path).map_err(|e| AppError::Database(e))?;
 
         // Initialize schema if needed
         let schema = r#"
@@ -67,9 +69,7 @@ impl SkillService {
         let skill_id = uuid::Uuid::new_v4().to_string();
 
         // Create skill directory
-        let skill_path = std::env::temp_dir()
-            .join("olenro-skills")
-            .join(&skill_id);
+        let skill_path = std::env::temp_dir().join("olenro-skills").join(&skill_id);
 
         std::fs::create_dir_all(&skill_path).map_err(|e| AppError::Io(e))?;
 
@@ -112,10 +112,10 @@ impl SkillService {
                     let _ = self.install_from_github(repo);
                 }
                 SkillSource::Zip { url } => {
-                    eprintln!("Updating from zip not yet implemented");
+                    log::debug!("Updating from zip not yet implemented");
                 }
                 SkillSource::Local { path } => {
-                    eprintln!("Local skill {} doesn't need updating", path);
+                    log::debug!("Local skill {} doesn't need updating", path);
                 }
             }
         }

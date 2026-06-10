@@ -1,7 +1,7 @@
 //! Proxy commands
 
-use crate::state::CliState;
 use crate::errors::Result;
+use crate::state::CliState;
 
 pub async fn start(port: u16, address: &str, state: &CliState) -> Result<()> {
     println!("Starting proxy on {}:{}...", address, port);

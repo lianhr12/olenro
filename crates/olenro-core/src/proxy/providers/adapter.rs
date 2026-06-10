@@ -24,21 +24,13 @@ pub trait ProviderAdapter: Send + Sync {
     }
 
     /// Transform request before forwarding
-    async fn transform_request(
-        &self,
-        request: Bytes,
-        api_format: &str,
-    ) -> AppResult<Bytes> {
+    async fn transform_request(&self, request: Bytes, api_format: &str) -> AppResult<Bytes> {
         // Default: no transformation
         Ok(request)
     }
 
     /// Transform response before returning
-    async fn transform_response(
-        &self,
-        response: Bytes,
-        api_format: &str,
-    ) -> AppResult<Bytes> {
+    async fn transform_response(&self, response: Bytes, api_format: &str) -> AppResult<Bytes> {
         // Default: no transformation
         Ok(response)
     }

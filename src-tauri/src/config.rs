@@ -131,8 +131,7 @@ pub fn migrate_legacy_config_dir_if_needed() {
     // 先就地重命名为 olenro.db，避免代码新建空库、看起来像“数据丢失”。
     rename_legacy_db_files(&new_dir);
 
-    let new_has_data =
-        new_dir.join("config.json").exists() || new_dir.join(DB_FILENAME).exists();
+    let new_has_data = new_dir.join("config.json").exists() || new_dir.join(DB_FILENAME).exists();
     if new_has_data {
         return;
     }
@@ -487,7 +486,10 @@ mod tests {
 
         // config.json 被跳过；cc-switch.db 与 logs/a.log 被复制 = 2
         assert_eq!(copied, 2);
-        assert_eq!(fs::read_to_string(to.join("config.json")).unwrap(), "existing");
+        assert_eq!(
+            fs::read_to_string(to.join("config.json")).unwrap(),
+            "existing"
+        );
         assert_eq!(fs::read_to_string(to.join("cc-switch.db")).unwrap(), "db");
         assert_eq!(fs::read_to_string(to.join("logs/a.log")).unwrap(), "log");
 
@@ -517,7 +519,10 @@ mod tests {
         assert!(base.join("olenro.db-shm").exists());
         assert!(!base.join("cc-switch.db").exists());
         assert_eq!(fs::read_to_string(base.join("olenro.db")).unwrap(), "main");
-        assert_eq!(fs::read_to_string(base.join("olenro.db-wal")).unwrap(), "wal");
+        assert_eq!(
+            fs::read_to_string(base.join("olenro.db-wal")).unwrap(),
+            "wal"
+        );
 
         let _ = fs::remove_dir_all(&base);
     }

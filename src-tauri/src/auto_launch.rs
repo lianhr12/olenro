@@ -87,14 +87,11 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn test_get_macos_app_bundle_path_with_spaces() {
-        let exe_path =
-            std::path::Path::new("/Users/test/My Apps/Olenro.app/Contents/MacOS/Olenro");
+        let exe_path = std::path::Path::new("/Users/test/My Apps/Olenro.app/Contents/MacOS/Olenro");
         let result = get_macos_app_bundle_path(exe_path);
         assert_eq!(
             result,
-            Some(std::path::PathBuf::from(
-                "/Users/test/My Apps/Olenro.app"
-            ))
+            Some(std::path::PathBuf::from("/Users/test/My Apps/Olenro.app"))
         );
     }
 

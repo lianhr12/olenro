@@ -2,9 +2,9 @@
 //!
 //! Provider adapter for Codex API
 
+use crate::proxy::providers::ProviderAdapter;
 use async_trait::async_trait;
 use std::collections::HashMap;
-use crate::proxy::providers::ProviderAdapter;
 
 pub struct CodexAdapter;
 

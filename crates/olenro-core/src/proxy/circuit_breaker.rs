@@ -2,8 +2,8 @@
 //!
 //! Circuit breaker implementation for provider failover
 
-use std::time::{Duration, Instant};
 use crate::proxy::CircuitBreakerState;
+use std::time::{Duration, Instant};
 
 /// Circuit breaker for a single provider
 pub struct CircuitBreaker {
@@ -57,7 +57,11 @@ impl CircuitBreaker {
         match self.state {
             CircuitBreakerState::Closed => true,
             CircuitBreakerState::Open => {
-                if self.last_failure.map(|t| t.elapsed() >= self.timeout).unwrap_or(false) {
+                if self
+                    .last_failure
+                    .map(|t| t.elapsed() >= self.timeout)
+                    .unwrap_or(false)
+                {
                     self.state = CircuitBreakerState::HalfOpen;
                     true
                 } else {

@@ -2,7 +2,7 @@
 //!
 //! Shared state for olenro-core
 
-use crate::config::get_app_config_dir;
+use crate::config::get_cli_database_path;
 use crate::services::provider::ProviderService;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,7 +16,7 @@ pub struct CoreState {
 impl CoreState {
     /// Create new core state
     pub fn new() -> Self {
-        let db_path = get_app_config_dir().join("olenro.db");
+        let db_path = get_cli_database_path();
         Self {
             db_path: db_path.clone(),
             provider_service: Arc::new(ProviderService::new(db_path)),

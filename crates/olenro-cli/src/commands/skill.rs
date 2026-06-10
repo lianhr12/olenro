@@ -1,8 +1,8 @@
 //! Skill commands
 
+use crate::errors::Result;
 use crate::output::print_table;
 use crate::state::CliState;
-use crate::errors::Result;
 
 pub async fn list(state: &CliState) -> Result<()> {
     println!("Listing installed skills...");
@@ -12,19 +12,23 @@ pub async fn list(state: &CliState) -> Result<()> {
             if skills.is_empty() {
                 println!("(empty)");
             } else {
-                let rows: Vec<Vec<String>> = skills.iter().map(|s| {
-                    let source_str = match &s.source {
-                        olenro_core::app_config::SkillSource::GitHub { repo } => format!("github:{}", repo),
-                        olenro_core::app_config::SkillSource::Zip { url } => format!("zip:{}", url),
-                        olenro_core::app_config::SkillSource::Local { path } => format!("local:{}", path),
-                    };
-                    vec![
-                        s.id.clone(),
-                        s.name.clone(),
-                        s.version.clone(),
-                        source_str,
-                    ]
-                }).collect();
+                let rows: Vec<Vec<String>> = skills
+                    .iter()
+                    .map(|s| {
+                        let source_str = match &s.source {
+                            olenro_core::app_config::SkillSource::GitHub { repo } => {
+                                format!("github:{}", repo)
+                            }
+                            olenro_core::app_config::SkillSource::Zip { url } => {
+                                format!("zip:{}", url)
+                            }
+                            olenro_core::app_config::SkillSource::Local { path } => {
+                                format!("local:{}", path)
+                            }
+                        };
+                        vec![s.id.clone(), s.name.clone(), s.version.clone(), source_str]
+                    })
+                    .collect();
                 print_table(&["ID", "Name", "Version", "Source"], &rows);
             }
         }

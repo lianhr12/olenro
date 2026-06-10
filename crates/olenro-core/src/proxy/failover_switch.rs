@@ -2,9 +2,9 @@
 //!
 //! Manages automatic failover between providers
 
-use std::collections::VecDeque;
 use crate::error::AppResult;
 use crate::proxy::FailoverQueueItem;
+use std::collections::VecDeque;
 
 /// Failover switch for managing provider failover
 pub struct FailoverSwitch {

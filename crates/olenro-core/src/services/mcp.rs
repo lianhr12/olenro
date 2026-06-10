@@ -2,7 +2,7 @@
 //!
 //! Business logic for MCP server management
 
-use crate::app_config::{McpServer, AppType};
+use crate::app_config::{AppType, McpServer};
 use crate::database::dao::McpDao;
 use crate::error::{AppError, AppResult};
 use std::collections::HashMap;
@@ -22,8 +22,10 @@ impl McpService {
     where
         F: FnOnce(&McpDao) -> AppResult<T>,
     {
-        let conn = rusqlite::Connection::open(&self.db_path)
-            .map_err(|e| AppError::Database(e))?;
+        if let Some(parent) = self.db_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let conn = rusqlite::Connection::open(&self.db_path).map_err(|e| AppError::Database(e))?;
 
         // Initialize schema if needed
         let schema = r#"
@@ -63,7 +65,14 @@ impl McpService {
     }
 
     /// Add a new MCP server
-    pub fn add_server(&self, name: &str, command: &str, args: Vec<String>, env: HashMap<String, String>, url: Option<String>) -> AppResult<McpServer> {
+    pub fn add_server(
+        &self,
+        name: &str,
+        command: &str,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        url: Option<String>,
+    ) -> AppResult<McpServer> {
         let now = chrono::Utc::now().timestamp();
 
         let server = McpServer {
@@ -108,20 +117,26 @@ impl McpService {
         let enabled_servers: Vec<&McpServer> = servers.iter().filter(|s| s.enabled).collect();
 
         // Build MCP config for the target app
-        let mcp_config: Vec<serde_json::Value> = enabled_servers.iter().map(|s| {
-            let mut obj = serde_json::Map::new();
-            obj.insert("command".to_string(), serde_json::Value::String(s.command.clone()));
-            if !s.args.is_empty() {
-                obj.insert("args".to_string(), serde_json::json!(s.args));
-            }
-            if !s.env.is_empty() {
-                obj.insert("env".to_string(), serde_json::json!(s.env));
-            }
-            if let Some(ref url) = s.url {
-                obj.insert("url".to_string(), serde_json::Value::String(url.clone()));
-            }
-            serde_json::Value::Object(obj)
-        }).collect();
+        let mcp_config: Vec<serde_json::Value> = enabled_servers
+            .iter()
+            .map(|s| {
+                let mut obj = serde_json::Map::new();
+                obj.insert(
+                    "command".to_string(),
+                    serde_json::Value::String(s.command.clone()),
+                );
+                if !s.args.is_empty() {
+                    obj.insert("args".to_string(), serde_json::json!(s.args));
+                }
+                if !s.env.is_empty() {
+                    obj.insert("env".to_string(), serde_json::json!(s.env));
+                }
+                if let Some(ref url) = s.url {
+                    obj.insert("url".to_string(), serde_json::Value::String(url.clone()));
+                }
+                serde_json::Value::Object(obj)
+            })
+            .collect();
 
         // Write to the app's MCP config file
         let config_path = self.get_app_mcp_path(app_type)?;
@@ -131,11 +146,16 @@ impl McpService {
 
         let content = serde_json::to_string_pretty(&serde_json::json!({
             "mcpServers": mcp_config
-        })).map_err(|e| AppError::Json(e))?;
+        }))
+        .map_err(|e| AppError::Json(e))?;
 
         std::fs::write(&config_path, content).map_err(|e| AppError::Io(e))?;
 
-        eprintln!("Synced {} MCP servers to {:?}", enabled_servers.len(), app_type);
+        log::debug!(
+            "Synced {} MCP servers to {:?}",
+            enabled_servers.len(),
+            app_type
+        );
         Ok(())
     }
 
@@ -148,7 +168,10 @@ impl McpService {
             AppType::OpenCode => base.join(".opencode/mcp.json"),
             AppType::Hermes => base.join(".hermes/mcp.json"),
             AppType::ClaudeDesktop | AppType::OpenClaw => {
-                return Err(AppError::Mcp(format!("{:?} does not support MCP config", app_type)));
+                return Err(AppError::Mcp(format!(
+                    "{:?} does not support MCP config",
+                    app_type
+                )));
             }
         };
         Ok(path)

@@ -6,6 +6,7 @@ use super::{lock_conn, Database, SCHEMA_VERSION};
 use crate::error::AppError;
 use rusqlite::{params, Connection};
 use serde::Serialize;
+use serde_json::json;
 
 #[derive(Serialize)]
 struct LegacySkillMigrationRow {
@@ -459,6 +460,12 @@ impl Database {
     /// v0 -> v1 迁移：补齐所有缺失列
     fn migrate_v0_to_v1(conn: &Connection) -> Result<(), AppError> {
         // providers 表
+        Self::add_column_if_missing(
+            conn,
+            "providers",
+            "app_type",
+            "TEXT NOT NULL DEFAULT 'claude'",
+        )?;
         Self::add_column_if_missing(conn, "providers", "category", "TEXT")?;
         Self::add_column_if_missing(conn, "providers", "created_at", "INTEGER")?;
         Self::add_column_if_missing(conn, "providers", "sort_index", "INTEGER")?;
@@ -474,13 +481,31 @@ impl Database {
         )?;
 
         // provider_endpoints 表
+        Self::add_column_if_missing(
+            conn,
+            "provider_endpoints",
+            "app_type",
+            "TEXT NOT NULL DEFAULT 'claude'",
+        )?;
         Self::add_column_if_missing(conn, "provider_endpoints", "added_at", "INTEGER")?;
 
         // mcp_servers 表
+        Self::add_column_if_missing(
+            conn,
+            "mcp_servers",
+            "server_config",
+            "TEXT NOT NULL DEFAULT '{}'",
+        )?;
         Self::add_column_if_missing(conn, "mcp_servers", "description", "TEXT")?;
         Self::add_column_if_missing(conn, "mcp_servers", "homepage", "TEXT")?;
         Self::add_column_if_missing(conn, "mcp_servers", "docs", "TEXT")?;
         Self::add_column_if_missing(conn, "mcp_servers", "tags", "TEXT NOT NULL DEFAULT '[]'")?;
+        Self::add_column_if_missing(
+            conn,
+            "mcp_servers",
+            "enabled_claude",
+            "BOOLEAN NOT NULL DEFAULT 0",
+        )?;
         Self::add_column_if_missing(
             conn,
             "mcp_servers",
@@ -493,6 +518,7 @@ impl Database {
             "enabled_gemini",
             "BOOLEAN NOT NULL DEFAULT 0",
         )?;
+        Self::migrate_legacy_mcp_servers_table(conn)?;
 
         // prompts 表
         Self::add_column_if_missing(conn, "prompts", "description", "TEXT")?;
@@ -512,6 +538,87 @@ impl Database {
         )?;
         Self::add_column_if_missing(conn, "skill_repos", "enabled", "BOOLEAN NOT NULL DEFAULT 1")?;
         // 注意: skills_path 字段已被移除，因为现在支持全仓库递归扫描
+
+        Ok(())
+    }
+
+    fn migrate_legacy_mcp_servers_table(conn: &Connection) -> Result<(), AppError> {
+        if !Self::has_column(conn, "mcp_servers", "command")? {
+            return Ok(());
+        }
+
+        let has_args = Self::has_column(conn, "mcp_servers", "args")?;
+        let has_env = Self::has_column(conn, "mcp_servers", "env")?;
+        let has_url = Self::has_column(conn, "mcp_servers", "url")?;
+        let has_enabled = Self::has_column(conn, "mcp_servers", "enabled")?;
+
+        let args_expr = if has_args { "args" } else { "'[]' AS args" };
+        let env_expr = if has_env { "env" } else { "'{}' AS env" };
+        let url_expr = if has_url { "url" } else { "NULL AS url" };
+        let enabled_expr = if has_enabled {
+            "enabled"
+        } else {
+            "1 AS enabled"
+        };
+        let sql = format!(
+            "SELECT id, command, {args_expr}, {env_expr}, {url_expr}, {enabled_expr} FROM mcp_servers"
+        );
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| AppError::Database(format!("查询旧 mcp_servers 数据失败: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, i64>(5)?,
+                ))
+            })
+            .map_err(|e| AppError::Database(format!("读取旧 mcp_servers 数据失败: {e}")))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::Database(format!("解析旧 mcp_servers 数据失败: {e}")))?;
+
+        for (id, command, args_str, env_str, url, enabled) in rows {
+            let args =
+                serde_json::from_str::<serde_json::Value>(&args_str).unwrap_or_else(|_| json!([]));
+            let env =
+                serde_json::from_str::<serde_json::Value>(&env_str).unwrap_or_else(|_| json!({}));
+            let mut server_config = serde_json::Map::new();
+            server_config.insert("type".to_string(), json!("stdio"));
+            server_config.insert("command".to_string(), json!(command));
+            if !args
+                .as_array()
+                .map(|items| items.is_empty())
+                .unwrap_or(true)
+            {
+                server_config.insert("args".to_string(), args);
+            }
+            if !env
+                .as_object()
+                .map(|items| items.is_empty())
+                .unwrap_or(true)
+            {
+                server_config.insert("env".to_string(), env);
+            }
+            if let Some(url) = url.filter(|value| !value.is_empty()) {
+                server_config.insert("url".to_string(), json!(url));
+            }
+
+            let server_config_json = serde_json::to_string(&server_config).map_err(|e| {
+                AppError::Database(format!("序列化旧 MCP 服务器 {id} 配置失败: {e}"))
+            })?;
+            conn.execute(
+                "UPDATE mcp_servers
+                 SET server_config = ?1, enabled_claude = ?2
+                 WHERE id = ?3",
+                params![server_config_json, enabled != 0, id],
+            )
+            .map_err(|e| AppError::Database(format!("迁移旧 MCP 服务器 {id} 失败: {e}")))?;
+        }
 
         Ok(())
     }
@@ -897,22 +1004,7 @@ impl Database {
             .unwrap_or(0);
         log::info!("旧 skills 表有 {old_count} 条记录");
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT directory, app_type FROM skills
-                 WHERE installed = 1",
-            )
-            .map_err(|e| AppError::Database(format!("查询旧 skills 快照失败: {e}")))?;
-        let snapshot_rows: Vec<LegacySkillMigrationRow> = stmt
-            .query_map([], |row| {
-                Ok(LegacySkillMigrationRow {
-                    directory: row.get(0)?,
-                    app_type: row.get(1)?,
-                })
-            })
-            .map_err(|e| AppError::Database(format!("读取旧 skills 快照失败: {e}")))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| AppError::Database(format!("解析旧 skills 快照失败: {e}")))?;
+        let snapshot_rows = Self::read_legacy_skill_snapshot_rows(conn)?;
         let snapshot_json = serde_json::to_string(&snapshot_rows)
             .map_err(|e| AppError::Database(format!("序列化旧 skills 快照失败: {e}")))?;
 
@@ -958,6 +1050,86 @@ impl Database {
         );
 
         Ok(())
+    }
+
+    fn read_legacy_skill_snapshot_rows(
+        conn: &Connection,
+    ) -> Result<Vec<LegacySkillMigrationRow>, AppError> {
+        if Self::has_column(conn, "skills", "directory")?
+            && Self::has_column(conn, "skills", "app_type")?
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT directory, app_type FROM skills
+                     WHERE installed = 1",
+                )
+                .map_err(|e| AppError::Database(format!("查询旧 skills 快照失败: {e}")))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(LegacySkillMigrationRow {
+                        directory: row.get(0)?,
+                        app_type: row.get(1)?,
+                    })
+                })
+                .map_err(|e| AppError::Database(format!("读取旧 skills 快照失败: {e}")))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| AppError::Database(format!("解析旧 skills 快照失败: {e}")))?;
+            return Ok(rows);
+        }
+
+        if Self::has_column(conn, "skills", "key")? {
+            return Self::read_legacy_skill_key_snapshot_rows(conn, "key");
+        }
+
+        if Self::has_column(conn, "skills", "id")? {
+            return Self::read_legacy_skill_key_snapshot_rows(conn, "id");
+        }
+
+        Ok(Vec::new())
+    }
+
+    fn read_legacy_skill_key_snapshot_rows(
+        conn: &Connection,
+        key_column: &str,
+    ) -> Result<Vec<LegacySkillMigrationRow>, AppError> {
+        Self::validate_identifier(key_column, "列名")?;
+
+        let where_installed = if Self::has_column(conn, "skills", "installed")? {
+            " WHERE installed = 1"
+        } else {
+            ""
+        };
+        let sql = format!("SELECT \"{key_column}\" FROM skills{where_installed}");
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| AppError::Database(format!("查询旧 skills 快照失败: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let key: String = row.get(0)?;
+                Ok(Self::parse_legacy_skill_key(&key))
+            })
+            .map_err(|e| AppError::Database(format!("读取旧 skills 快照失败: {e}")))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::Database(format!("解析旧 skills 快照失败: {e}")))?;
+        Ok(rows)
+    }
+
+    fn parse_legacy_skill_key(key: &str) -> LegacySkillMigrationRow {
+        if let Some(idx) = key.find(':') {
+            let (app, directory) = key.split_at(idx);
+            let directory = &directory[1..];
+            if !app.is_empty() && !directory.is_empty() {
+                return LegacySkillMigrationRow {
+                    directory: directory.to_string(),
+                    app_type: app.to_string(),
+                };
+            }
+        }
+
+        LegacySkillMigrationRow {
+            directory: key.to_string(),
+            app_type: "claude".to_string(),
+        }
     }
 
     /// v3 -> v4 迁移：添加 OpenCode 支持

@@ -2,9 +2,9 @@
 //!
 //! Provider adapter for Gemini API
 
+use crate::proxy::providers::ProviderAdapter;
 use async_trait::async_trait;
 use std::collections::HashMap;
-use crate::proxy::providers::ProviderAdapter;
 
 pub struct GeminiAdapter;
 

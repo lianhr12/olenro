@@ -1,7 +1,7 @@
 //! Prompts DAO
 
-use crate::prompt::Prompt;
 use crate::error::{AppError, AppResult};
+use crate::prompt::Prompt;
 use rusqlite::{params, Connection, Row};
 
 pub struct PromptsDao<'a> {
@@ -34,8 +34,7 @@ impl<'a> PromptsDao<'a> {
             "SELECT id, name, content, description, enabled, created_at, updated_at FROM prompts WHERE id = ?"
         )?;
 
-        let mut rows = stmt.query(params![id])
-            .map_err(|e| AppError::Database(e))?;
+        let mut rows = stmt.query(params![id]).map_err(|e| AppError::Database(e))?;
 
         if let Some(row) = rows.next().map_err(|e| AppError::Database(e))? {
             Ok(Some(self.row_to_prompt(row)?))
@@ -50,7 +49,8 @@ impl<'a> PromptsDao<'a> {
             "SELECT id, name, content, description, enabled, created_at, updated_at FROM prompts WHERE enabled = 1 AND app_type = ? ORDER BY updated_at DESC LIMIT 1"
         )?;
 
-        let mut rows = stmt.query(params![app_type])
+        let mut rows = stmt
+            .query(params![app_type])
             .map_err(|e| AppError::Database(e))?;
 
         if let Some(row) = rows.next().map_err(|e| AppError::Database(e))? {
@@ -97,14 +97,16 @@ impl<'a> PromptsDao<'a> {
 
     /// Delete a prompt
     pub fn delete(&self, id: &str) -> AppResult<()> {
-        self.conn.execute("DELETE FROM prompts WHERE id = ?", params![id])
+        self.conn
+            .execute("DELETE FROM prompts WHERE id = ?", params![id])
             .map_err(|e| AppError::Database(e))?;
         Ok(())
     }
 
     /// Disable all prompts for an app (when enabling a new one)
     pub fn disable_all(&self) -> AppResult<()> {
-        self.conn.execute("UPDATE prompts SET enabled = 0", [])
+        self.conn
+            .execute("UPDATE prompts SET enabled = 0", [])
             .map_err(|e| AppError::Database(e))?;
         Ok(())
     }

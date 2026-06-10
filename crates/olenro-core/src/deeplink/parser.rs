@@ -47,12 +47,16 @@ pub fn parse_deeplink_url(url_str: &str) -> AppResult<DeepLinkImportRequest> {
     let url_str = if url_str.starts_with("ccswitch://") {
         url_str.replace("ccswitch://", "olenro://")
     } else if !url_str.starts_with("olenro://") {
-        return Err(AppError::DeepLink(format!("Invalid URL scheme: {}", url_str)));
+        return Err(AppError::DeepLink(format!(
+            "Invalid URL scheme: {}",
+            url_str
+        )));
     } else {
         url_str.to_string()
     };
 
-    let url = Url::parse(&url_str).map_err(|e| AppError::DeepLink(format!("URL parse error: {}", e)))?;
+    let url =
+        Url::parse(&url_str).map_err(|e| AppError::DeepLink(format!("URL parse error: {}", e)))?;
 
     // Extract path (e.g., "/v1/import/provider" -> "provider")
     let path_segments: Vec<&str> = url.path_segments().map(|s| s.collect()).unwrap_or_default();

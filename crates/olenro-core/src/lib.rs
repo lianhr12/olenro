@@ -8,23 +8,27 @@
 #![allow(unused)]
 #![allow(rustdoc::private_intra_doc_links)]
 
-pub mod error;
-pub mod config;
-pub mod provider;
 pub mod app_config;
-pub mod provider_defaults;
+pub mod app_config_writers;
+pub mod config;
+pub mod core_state;
+pub mod database;
+pub mod deeplink;
+pub mod error;
+pub mod pricing;
 pub mod prompt;
 pub mod prompt_files;
-pub mod database;
-pub mod services;
+pub mod provider;
+pub mod provider_defaults;
 pub mod proxy;
-pub mod deeplink;
+pub mod services;
 pub mod session_manager;
-pub mod app_config_writers;
-pub mod core_state;
 
 // Re-exports for convenience
-pub use error::AppError;
-pub use config::{get_app_config_dir, get_home_dir, DB_FILENAME};
+pub use config::{
+    get_app_config_dir, get_app_database_path, get_cli_config_dir, get_cli_database_path,
+    get_home_dir, CLI_DB_FILENAME, DB_FILENAME,
+};
 pub use core_state::CoreState;
+pub use error::AppError;
 pub use services::provider::ProviderService;

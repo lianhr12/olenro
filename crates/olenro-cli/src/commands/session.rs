@@ -1,10 +1,14 @@
 //! Session commands
 
-use crate::output::print_table;
 use crate::errors::Result;
+use crate::output::print_table;
 
 pub async fn list(app: Option<String>, limit: usize) -> Result<()> {
-    println!("Listing sessions{} (limit {})...", app.map(|a| format!(" for {}", a)).unwrap_or_default(), limit);
+    println!(
+        "Listing sessions{} (limit {})...",
+        app.map(|a| format!(" for {}", a)).unwrap_or_default(),
+        limit
+    );
     print_table(&["ID", "Name", "Updated", "Messages"], &[]);
     Ok(())
 }

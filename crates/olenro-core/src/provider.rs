@@ -320,7 +320,11 @@ impl Provider {
 
     /// Check if provider has usage script enabled
     pub fn has_usage_script_enabled(&self) -> bool {
-        self.meta.usage_script.as_ref().map(|s| s.enabled).unwrap_or(false)
+        self.meta
+            .usage_script
+            .as_ref()
+            .map(|s| s.enabled)
+            .unwrap_or(false)
     }
 
     /// Check if Codex fast mode is enabled

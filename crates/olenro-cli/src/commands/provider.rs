@@ -1,26 +1,34 @@
 //! Provider commands
 
+use crate::errors::Result;
 use crate::output::print_table;
 use crate::state::CliState;
-use crate::errors::Result;
 use std::sync::Arc;
 
 pub async fn list(app: Option<String>, state: &CliState) -> Result<()> {
-    println!("Listing providers{}...", app.map(|a| format!(" for {}", a)).unwrap_or_default().as_str());
+    println!(
+        "Listing providers{}...",
+        app.map(|a| format!(" for {}", a))
+            .unwrap_or_default()
+            .as_str()
+    );
 
     match state.core.provider_service.list_providers() {
         Ok(providers) => {
             if providers.is_empty() {
                 println!("(empty)");
             } else {
-                let rows: Vec<Vec<String>> = providers.iter().map(|p| {
-                    vec![
-                        p.id.clone(),
-                        p.name.clone(),
-                        format!("{:?}", p.category),
-                        p.website_url.clone().unwrap_or_default(),
-                    ]
-                }).collect();
+                let rows: Vec<Vec<String>> = providers
+                    .iter()
+                    .map(|p| {
+                        vec![
+                            p.id.clone(),
+                            p.name.clone(),
+                            format!("{:?}", p.category),
+                            p.website_url.clone().unwrap_or_default(),
+                        ]
+                    })
+                    .collect();
                 print_table(&["ID", "Name", "Category", "URL"], &rows);
             }
         }
@@ -36,7 +44,13 @@ pub async fn current(app: &str, state: &CliState) -> Result<()> {
     Ok(())
 }
 
-pub async fn add(name: &str, app: &str, endpoint: &str, api_key: Option<String>, state: &CliState) -> Result<()> {
+pub async fn add(
+    name: &str,
+    app: &str,
+    endpoint: &str,
+    api_key: Option<String>,
+    state: &CliState,
+) -> Result<()> {
     println!("Adding provider '{}' for {} at {}...", name, app, endpoint);
 
     let category = match app {
@@ -46,12 +60,11 @@ pub async fn add(name: &str, app: &str, endpoint: &str, api_key: Option<String>,
         _ => olenro_core::provider::ProviderCategory::Custom,
     };
 
-    match state.core.provider_service.add_provider(
-        name,
-        endpoint,
-        category,
-        api_key.as_deref(),
-    ) {
+    match state
+        .core
+        .provider_service
+        .add_provider(name, endpoint, category, api_key.as_deref())
+    {
         Ok(provider) => {
             println!("✓ Added provider: {} ({})", provider.name, provider.id);
         }
@@ -62,7 +75,12 @@ pub async fn add(name: &str, app: &str, endpoint: &str, api_key: Option<String>,
     Ok(())
 }
 
-pub async fn update(id: &str, name: Option<String>, endpoint: Option<String>, state: &CliState) -> Result<()> {
+pub async fn update(
+    id: &str,
+    name: Option<String>,
+    endpoint: Option<String>,
+    state: &CliState,
+) -> Result<()> {
     println!("Updating provider {}...", id);
 
     // Fetch existing provider
@@ -125,7 +143,11 @@ pub async fn switch(id: &str, app: &str, state: &CliState) -> Result<()> {
         return Ok(());
     }
 
-    match state.core.provider_service.switch_provider(id, app_type.unwrap()) {
+    match state
+        .core
+        .provider_service
+        .switch_provider(id, app_type.unwrap())
+    {
         Ok(_) => println!("✓ Switched {} to provider {}", app, id),
         Err(e) => println!("✗ Failed to switch: {}", e),
     }
