@@ -92,8 +92,12 @@ fn handle_list_key(state: &mut TuiState, code: KeyCode) -> bool {
         KeyCode::Char('s') if state.current_tab == Tab::Proxy => proxy_start(state),
         KeyCode::Char('x') if state.current_tab == Tab::Proxy => proxy_stop(state),
         KeyCode::Char('t') if state.current_tab == Tab::Proxy => proxy_toggle_takeover(state),
+        // Toggle the selected provider in/out of the failover queue.
+        KeyCode::Char('f') if state.current_tab == Tab::Providers => provider_toggle_failover(state),
         // Sync MCP servers to every app's config (MCP tab).
         KeyCode::Char('s') if state.current_tab == Tab::Mcp => mcp_sync_all(state),
+        // Sync installed skills into the current app's skills directory.
+        KeyCode::Char('s') if state.current_tab == Tab::Skills => skill_sync_to_app(state),
         // Resume the selected session (Sessions tab).
         KeyCode::Char('r') if state.current_tab == Tab::Sessions => session_resume(state),
         // Cycle the OpenClaw tools profile.
@@ -109,6 +113,17 @@ fn handle_list_key(state: &mut TuiState, code: KeyCode) -> bool {
             load_discover_popular(state);
         }
         KeyCode::Char('i') if state.current_tab == Tab::Discover => discover_install(state),
+        // git-sync / backup actions on the Settings tab.
+        KeyCode::Char('g') if state.current_tab == Tab::Settings => git_push(state),
+        KeyCode::Char('p') if state.current_tab == Tab::Settings => git_pull(state),
+        KeyCode::Char('b') if state.current_tab == Tab::Settings => git_backup(state),
+        KeyCode::Char('i') if state.current_tab == Tab::Settings => {
+            let st = olenro_core::git_sync::status();
+            state.endpoint_input = st.remote.unwrap_or_default();
+            state.name_input = st.branch.unwrap_or_else(|| "main".to_string());
+            state.dialog_mode = DialogMode::ConfigureGitSync;
+            state.input_field = 0;
+        }
         KeyCode::Char('s') => handle_enter_list(state), // switch/enable shortcut elsewhere
         _ => {}
     }
@@ -193,6 +208,32 @@ fn resume_command(app: olenro_core::provider::AppType, id: &str) -> String {
         AppType::OpenCode => format!("opencode --session {}", id),
         AppType::OpenClaw => format!("openclaw --resume {}", id),
         AppType::Hermes => format!("hermes --resume {}", id),
+    }
+}
+
+/// Sync all installed skills into the active app's skills directory.
+fn skill_sync_to_app(state: &mut TuiState) {
+    let app = state.active_app;
+    let name = state.active_app_name();
+    match state.skill_service.sync_to_app(&app) {
+        Ok(n) => state.set_status(format!("Synced {} skill(s) → {}", n, name)),
+        Err(e) => state.set_status(format!("Sync failed: {}", e)),
+    }
+}
+
+/// Toggle whether the selected provider is in the failover queue.
+fn provider_toggle_failover(state: &mut TuiState) {
+    let providers = state.provider_service.list_providers().unwrap_or_default();
+    if let Some(p) = providers.get(state.selected_index) {
+        let enable = !p.in_failover_queue;
+        match state.provider_service.set_in_failover_queue(&p.id, enable) {
+            Ok(_) => state.set_status(format!(
+                "{} failover queue: {}",
+                if enable { "Added to" } else { "Removed from" },
+                p.name
+            )),
+            Err(e) => state.set_status(format!("Failover toggle failed: {}", e)),
+        }
     }
 }
 
@@ -466,6 +507,40 @@ fn universal_cycle_apps(state: &mut TuiState) {
     match state.universal_service.save(&p) {
         Ok(_) => state.set_status(format!("{} → apps: {}", p.name, label)),
         Err(e) => state.set_status(format!("Save failed: {}", e)),
+    }
+}
+
+/// Commit + push the config dir to git.
+fn git_push(state: &mut TuiState) {
+    state.set_status("git push…");
+    match olenro_core::git_sync::push("olenro: sync config") {
+        Ok(msg) => state.set_status(format!("Git: {}", msg)),
+        Err(e) => state.set_status(format!("Git push failed: {}", e)),
+    }
+}
+
+/// Pull the config dir from git origin.
+fn git_pull(state: &mut TuiState) {
+    state.set_status("git pull…");
+    match olenro_core::git_sync::pull() {
+        Ok(msg) => {
+            let line = msg.lines().last().unwrap_or("done").to_string();
+            state.set_status(format!("Git pull: {}", line));
+        }
+        Err(e) => state.set_status(format!("Git pull failed: {}", e)),
+    }
+}
+
+/// Snapshot the CLI database to a timestamped backup file.
+fn git_backup(state: &mut TuiState) {
+    match olenro_core::git_sync::create_backup() {
+        Ok(path) => state.set_status(format!(
+            "Backup created: {}",
+            path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        )),
+        Err(e) => state.set_status(format!("Backup failed: {}", e)),
     }
 }
 
@@ -978,6 +1053,23 @@ fn submit_dialog(state: &mut TuiState) {
                 Err(e) => state.set_status(format!("Create failed: {}", e)),
             }
         }
+        DialogMode::ConfigureGitSync => {
+            let remote = state.endpoint_input.trim().to_string();
+            let branch = if state.name_input.trim().is_empty() {
+                "main".to_string()
+            } else {
+                state.name_input.trim().to_string()
+            };
+            let remote_opt = if remote.is_empty() {
+                None
+            } else {
+                Some(remote.as_str())
+            };
+            match olenro_core::git_sync::init(remote_opt, &branch) {
+                Ok(_) => state.set_status(format!("Git sync configured (branch {})", branch)),
+                Err(e) => state.set_status(format!("Configure failed: {}", e)),
+            }
+        }
         DialogMode::SearchSkills => {
             let query = state.name_input.trim().to_string();
             if query.len() < 2 {
@@ -1066,6 +1158,7 @@ mod tests {
             DialogMode::AddAgent,
             DialogMode::DeleteAgent("user".into(), "code-reviewer".into()),
             DialogMode::SearchSkills,
+            DialogMode::ConfigureGitSync,
         ] {
             state.dialog_mode = mode;
             draw(&mut state);

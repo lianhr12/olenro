@@ -281,7 +281,8 @@ fn render_providers(f: &mut Frame, area: Rect, state: &mut TuiState) {
                 .get("base_url")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let content = format!("{}{} [{:?}]  {}", prefix, p.name, p.category, endpoint);
+            let fo = if p.in_failover_queue { "⚡" } else { " " };
+            let content = format!("{}{}{} [{:?}]  {}", prefix, fo, p.name, p.category, endpoint);
             ListItem::new(content).style(row_style(selected))
         })
         .collect();
@@ -289,7 +290,7 @@ fn render_providers(f: &mut Frame, area: Rect, state: &mut TuiState) {
     let list = List::new(items)
         .style(Style::default().bg(BG).fg(Color::White))
         .block(panel(format!(
-            " Providers ({})  [Enter/s] switch  [e] edit  [+] add  [d] delete ",
+            " Providers ({})  [Enter/s] switch  [e] edit  [f] failover  [+] add  [d] delete ",
             providers.len()
         )));
     f.render_widget(list, area);
@@ -400,7 +401,7 @@ fn render_skills(f: &mut Frame, area: Rect, state: &mut TuiState) {
     let list = List::new(items)
         .style(Style::default().bg(BG).fg(Color::White))
         .block(panel(format!(
-            " Skills ({})  [Enter/s] update  [+] install  [d] uninstall ",
+            " Skills ({})  [Enter] update  [s] sync→app  [+] install  [d] uninstall ",
             skills.len()
         )));
     f.render_widget(list, area);
@@ -737,7 +738,7 @@ fn render_proxy(f: &mut Frame, area: Rect, state: &mut TuiState) {
         ProxyStatus::Error => ("✗", "Error", Color::Red),
     };
 
-    let text = vec![
+    let mut text = vec![
         Line::from(""),
         Line::from("  Local HTTP Proxy"),
         Line::from(""),
@@ -798,16 +799,35 @@ fn render_proxy(f: &mut Frame, area: Rect, state: &mut TuiState) {
                 ])
             }
         },
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  [s] ", Style::default().fg(Color::Cyan)),
-            Span::raw("start proxy    "),
-            Span::styled("[x] ", Style::default().fg(Color::Cyan)),
-            Span::raw("stop proxy    "),
-            Span::styled("[t] ", Style::default().fg(Color::Cyan)),
-            Span::raw("toggle takeover"),
-        ]),
     ];
+
+    // Failover queue (providers tried in order when the active one fails).
+    let queue = state.provider_service.list_failover_queue().unwrap_or_default();
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        format!("  Failover Queue ({})", queue.len()),
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+    )));
+    if queue.is_empty() {
+        text.push(Line::from(Span::styled(
+            "    (empty — add providers with [f] on the Providers tab)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (i, p) in queue.iter().enumerate() {
+            text.push(Line::from(format!("    {}. {}", i + 1, p.name)));
+        }
+    }
+
+    text.push(Line::from(""));
+    text.push(Line::from(vec![
+        Span::styled("  [s] ", Style::default().fg(Color::Cyan)),
+        Span::raw("start proxy    "),
+        Span::styled("[x] ", Style::default().fg(Color::Cyan)),
+        Span::raw("stop proxy    "),
+        Span::styled("[t] ", Style::default().fg(Color::Cyan)),
+        Span::raw("toggle takeover"),
+    ]));
 
     let paragraph = Paragraph::new(text)
         .style(Style::default().bg(BG).fg(Color::White))
@@ -1177,7 +1197,7 @@ fn render_settings(f: &mut Frame, area: Rect, state: &mut TuiState) {
         .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
-    let text = vec![
+    let mut text = vec![
         Line::from(""),
         Line::from("  Configuration"),
         Line::from(""),
@@ -1185,11 +1205,57 @@ fn render_settings(f: &mut Frame, area: Rect, state: &mut TuiState) {
         Line::from(format!("  Config Dir: {}", config_dir)),
         Line::from(format!("  App:        {}", state.active_app_name())),
         Line::from(""),
-        Line::from(Span::styled(
-            "  Git-sync / backup-restore are not yet wired into core (CLI commands are stubs).",
-            Style::default().fg(Color::DarkGray),
-        )),
     ];
+
+    // Git sync status.
+    let git = olenro_core::git_sync::status();
+    text.push(Line::from(Span::styled(
+        "  Git Sync",
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+    )));
+    if git.is_repo {
+        let dirty = if git.dirty { "dirty" } else { "clean" };
+        let dirty_color = if git.dirty { Color::Yellow } else { Color::Green };
+        text.push(Line::from(vec![
+            Span::raw(format!(
+                "    Branch: {}   Remote: {}   ",
+                git.branch.as_deref().unwrap_or("-"),
+                git.remote.as_deref().unwrap_or("(none)"),
+            )),
+            Span::styled(dirty, Style::default().fg(dirty_color)),
+        ]));
+    } else {
+        text.push(Line::from(Span::styled(
+            "    Not a git repo — press [i] to configure (set remote + branch).",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    // Backups.
+    let backups = olenro_core::git_sync::list_backups();
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        format!("  Backups ({})", backups.len()),
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+    )));
+    for b in backups.iter().take(3) {
+        text.push(Line::from(format!(
+            "    {}  ({} B)",
+            b.filename, b.size_bytes
+        )));
+    }
+
+    text.push(Line::from(""));
+    text.push(Line::from(vec![
+        Span::styled("  [g] ", Style::default().fg(Color::Cyan)),
+        Span::raw("push    "),
+        Span::styled("[p] ", Style::default().fg(Color::Cyan)),
+        Span::raw("pull    "),
+        Span::styled("[b] ", Style::default().fg(Color::Cyan)),
+        Span::raw("backup    "),
+        Span::styled("[i] ", Style::default().fg(Color::Cyan)),
+        Span::raw("configure"),
+    ]));
 
     let paragraph = Paragraph::new(text)
         .style(Style::default().bg(BG).fg(Color::White))
@@ -1204,7 +1270,7 @@ fn render_status(f: &mut Frame, area: Rect, state: &TuiState) {
     } else {
         match state.current_tab {
             Tab::Providers => {
-                "[↑↓] select  [Enter/s] switch  [e] edit  [+] add  [d] delete  [Tab] panel  [q] quit"
+                "[↑↓] select  [Enter/s] switch  [e] edit  [f] failover  [+] add  [d] del  [Tab] panel  [q] quit"
             }
             Tab::Mcp => {
                 "[↑↓] select  [Enter] toggle  [s] sync  [+] add  [d] delete  [Tab] panel  [q] quit"
@@ -1213,7 +1279,7 @@ fn render_status(f: &mut Frame, area: Rect, state: &TuiState) {
                 "[↑↓] select  [Enter/s] enable  [e] edit  [+] add  [d] delete  [Tab] panel  [q] quit"
             }
             Tab::Skills => {
-                "[↑↓] select  [Enter/s] update  [+] install  [d] uninstall  [Tab] panel  [q] quit"
+                "[↑↓] select  [Enter] update  [s] sync→app  [+] install  [d] uninstall  [Tab] panel  [q] quit"
             }
             Tab::Agents => {
                 "[↑↓] select  [Enter] details  [+] add  [d] delete  [Tab] panel  [q] quit"
@@ -1239,8 +1305,11 @@ fn render_status(f: &mut Frame, area: Rect, state: &TuiState) {
             Tab::HermesMemory => {
                 "[↑↓] select  [Enter] toggle enabled  [/] app  [Tab] panel  [q] quit"
             }
+            Tab::Settings => {
+                "[g] push  [p] pull  [b] backup  [i] configure  [/] app  [Tab] panel  [q] quit"
+            }
             // Read-only panels: don't advertise add/edit/delete.
-            Tab::Dashboard | Tab::Usage | Tab::Settings => {
+            Tab::Dashboard | Tab::Usage => {
                 "[/] switch app  [Tab/Shift+Tab] switch panel  [q] quit"
             }
         }
@@ -1460,6 +1529,20 @@ fn render_dialog(f: &mut Frame, area: Rect, state: &TuiState) {
                 Line::from(""),
                 Line::from(Span::styled(
                     "  [Tab] next  [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            8,
+        ),
+        DialogMode::ConfigureGitSync => (
+            " Configure Git Sync ",
+            vec![
+                Line::from(""),
+                field_line("Remote:", &state.endpoint_input, state.input_field == 0),
+                field_line("Branch:", &state.name_input, state.input_field == 1),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Remote git URL (optional) + branch.  [Tab] next  [Enter] save  [Esc] cancel",
                     Style::default().fg(Color::DarkGray),
                 )),
             ],

@@ -45,7 +45,18 @@ pub async fn takeover(app: &str, action: &str) -> Result<()> {
 
 pub async fn failover(state: &CliState) -> Result<()> {
     let _ = state;
+    let svc = olenro_core::services::provider::ProviderService::new(
+        olenro_core::config::get_cli_database_path(),
+    );
     println!("Failover queue:");
-    println!("(empty - no failover configured)");
+    match svc.list_failover_queue() {
+        Ok(queue) if queue.is_empty() => println!("  (empty)"),
+        Ok(queue) => {
+            for (i, p) in queue.iter().enumerate() {
+                println!("  {}. {}", i + 1, p.name);
+            }
+        }
+        Err(e) => println!("  error: {e}"),
+    }
     Ok(())
 }

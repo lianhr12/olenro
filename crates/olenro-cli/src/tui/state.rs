@@ -128,6 +128,8 @@ pub enum DialogMode {
     DeleteAgent(String, String), // (scope_label, name)
     // skills.sh discovery
     SearchSkills,
+    // git-sync
+    ConfigureGitSync,
 }
 
 impl DialogMode {
@@ -146,6 +148,7 @@ impl DialogMode {
             DialogMode::EditUniversal(_) => 2, // name, base_url
             DialogMode::AddAgent => 2,        // name, description
             DialogMode::SearchSkills => 1,    // query
+            DialogMode::ConfigureGitSync => 2, // remote url, branch
             _ => 0,
         }
     }
@@ -362,6 +365,8 @@ impl TuiState {
             (DialogMode::AddAgent, 0) => self.name_input.push(c),
             (DialogMode::AddAgent, 1) => self.content_input.push(c),
             (DialogMode::SearchSkills, 0) => self.name_input.push(c),
+            (DialogMode::ConfigureGitSync, 0) => self.endpoint_input.push(c),
+            (DialogMode::ConfigureGitSync, 1) => self.name_input.push(c),
             _ => {}
         }
     }
@@ -436,6 +441,12 @@ impl TuiState {
                 self.content_input.pop();
             }
             (DialogMode::SearchSkills, 0) => {
+                self.name_input.pop();
+            }
+            (DialogMode::ConfigureGitSync, 0) => {
+                self.endpoint_input.pop();
+            }
+            (DialogMode::ConfigureGitSync, 1) => {
                 self.name_input.pop();
             }
             _ => {}

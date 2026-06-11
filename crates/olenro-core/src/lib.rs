@@ -16,6 +16,7 @@ pub mod core_state;
 pub mod database;
 pub mod deeplink;
 pub mod error;
+pub mod git_sync;
 pub mod openclaw_workspace;
 pub mod pricing;
 pub mod prompt;

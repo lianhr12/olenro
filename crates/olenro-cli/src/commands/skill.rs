@@ -93,8 +93,15 @@ pub async fn update(id: &str, state: &CliState) -> Result<()> {
     Ok(())
 }
 
-pub async fn sync(_app: &str, _state: &CliState) -> Result<()> {
-    println!("Syncing skills to {}...", _app);
-    println!("(Skill sync not yet implemented)");
+pub async fn sync(app: &str, state: &CliState) -> Result<()> {
+    let Some(app_type) = olenro_core::provider::AppType::from_str(app) else {
+        println!("✗ Unknown app: {app}");
+        return Ok(());
+    };
+    println!("Syncing skills to {app}...");
+    match state.skill.sync_to_app(&app_type) {
+        Ok(n) => println!("✓ Synced {n} skill(s) to {app}"),
+        Err(e) => println!("✗ Sync failed: {e}"),
+    }
     Ok(())
 }

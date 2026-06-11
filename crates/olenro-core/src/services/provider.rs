@@ -82,6 +82,26 @@ impl ProviderService {
         self.with_conn(|dao| dao.delete(id))
     }
 
+    /// Providers in the failover queue, ordered by sort_index (queue priority).
+    pub fn list_failover_queue(&self) -> AppResult<Vec<Provider>> {
+        Ok(self
+            .list_providers()?
+            .into_iter()
+            .filter(|p| p.in_failover_queue)
+            .collect())
+    }
+
+    /// Add/remove a provider from the failover queue.
+    pub fn set_in_failover_queue(&self, id: &str, enabled: bool) -> AppResult<()> {
+        match self.get_provider(id)? {
+            Some(mut p) => {
+                p.in_failover_queue = enabled;
+                self.update_provider(p)
+            }
+            None => Err(AppError::NotFound(format!("provider not found: {id}"))),
+        }
+    }
+
     /// Create a new provider with given parameters
     pub fn add_provider(
         &self,
@@ -275,6 +295,26 @@ mod tests {
     use super::*;
     use crate::provider::ProviderCategory;
     use serial_test::serial;
+
+    #[test]
+    fn failover_queue_add_and_remove() {
+        let dir = tempfile::tempdir().unwrap();
+        let svc = ProviderService::new(dir.path().join("test.db"));
+        let p = svc
+            .add_provider("Acme", "https://acme.test", ProviderCategory::Custom, None)
+            .unwrap();
+        assert!(svc.list_failover_queue().unwrap().is_empty());
+
+        svc.set_in_failover_queue(&p.id, true).unwrap();
+        let queue = svc.list_failover_queue().unwrap();
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].id, p.id);
+
+        svc.set_in_failover_queue(&p.id, false).unwrap();
+        assert!(svc.list_failover_queue().unwrap().is_empty());
+
+        assert!(svc.set_in_failover_queue("missing", true).is_err());
+    }
 
     // Both phases mutate the process-global OLENRO_TEST_HOME, so they live in a
     // single (serial) test to avoid racing other tests.
