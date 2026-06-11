@@ -690,6 +690,7 @@ fn resolve_target(db_path: &std::path::Path) -> Option<ResolvedTarget> {
 mod tests {
     use super::*;
     use crate::proxy::ProxyConfig;
+    use serial_test::serial;
 
     #[test]
     fn start_stop_via_handle_block_on() {
@@ -789,6 +790,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn claude_takeover_roundtrip() {
         use crate::provider::AppType;
 

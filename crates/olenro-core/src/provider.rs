@@ -345,6 +345,130 @@ pub struct CreateProviderInput {
     pub icon_color: Option<String>,
 }
 
+// ============================================================================
+// 统一供应商（Universal Provider）- 跨应用共享配置
+//
+// 由 src-tauri/src/provider.rs 移植：跨 App（Claude/Codex/Gemini）共享同一套
+// base_url/api_key，并为各 App 单独配置模型。存储为 settings 表中的 JSON blob。
+// ============================================================================
+
+/// 统一供应商的应用启用状态
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UniversalProviderApps {
+    #[serde(default)]
+    pub claude: bool,
+    #[serde(default)]
+    pub codex: bool,
+    #[serde(default)]
+    pub gemini: bool,
+}
+
+/// Claude 模型配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ClaudeModelConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "haikuModel")]
+    pub haiku_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "sonnetModel")]
+    pub sonnet_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "opusModel")]
+    pub opus_model: Option<String>,
+}
+
+/// Codex 模型配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CodexModelConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "reasoningEffort")]
+    pub reasoning_effort: Option<String>,
+}
+
+/// Gemini 模型配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GeminiModelConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+/// 各应用的模型配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UniversalProviderModels {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claude: Option<ClaudeModelConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex: Option<CodexModelConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gemini: Option<GeminiModelConfig>,
+}
+
+/// 统一供应商（跨应用共享配置）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UniversalProvider {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "providerType")]
+    pub provider_type: String,
+    pub apps: UniversalProviderApps,
+    #[serde(rename = "baseUrl")]
+    pub base_url: String,
+    #[serde(rename = "apiKey")]
+    pub api_key: String,
+    #[serde(default)]
+    pub models: UniversalProviderModels,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "websiteUrl")]
+    pub website_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "iconColor")]
+    pub icon_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<ProviderMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "createdAt")]
+    pub created_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "sortIndex")]
+    pub sort_index: Option<usize>,
+}
+
+impl UniversalProvider {
+    /// 创建新的统一供应商
+    pub fn new(
+        id: String,
+        name: String,
+        provider_type: String,
+        base_url: String,
+        api_key: String,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            provider_type,
+            apps: UniversalProviderApps::default(),
+            base_url,
+            api_key,
+            models: UniversalProviderModels::default(),
+            website_url: None,
+            notes: None,
+            icon: None,
+            icon_color: None,
+            meta: None,
+            created_at: Some(chrono::Utc::now().timestamp_millis()),
+            sort_index: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

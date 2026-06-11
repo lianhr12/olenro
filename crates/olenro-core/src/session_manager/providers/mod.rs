@@ -215,6 +215,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[serial_test::serial]
     fn lists_claude_sessions_from_projects_dir() {
         let home = std::env::temp_dir().join(format!("olenro-sess-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);

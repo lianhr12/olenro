@@ -274,10 +274,12 @@ fn write_claude_live(provider: &Provider) -> AppResult<()> {
 mod tests {
     use super::*;
     use crate::provider::ProviderCategory;
+    use serial_test::serial;
 
     // Both phases mutate the process-global OLENRO_TEST_HOME, so they live in a
     // single (serial) test to avoid racing other tests.
     #[test]
+    #[serial]
     fn switch_writes_and_merges_claude_live_config() {
         let home = std::env::temp_dir().join(format!("olenro-switch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);

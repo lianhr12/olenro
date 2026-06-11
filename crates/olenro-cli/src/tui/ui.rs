@@ -37,7 +37,7 @@ pub fn render(f: &mut Frame, state: &mut TuiState) {
         ])
         .split(f.size());
 
-    render_title(f, chunks[0]);
+    render_title(f, chunks[0], state);
     render_tabs(f, chunks[1], state);
     render_content(f, chunks[2], state);
     render_status(f, chunks[3], state);
@@ -48,32 +48,58 @@ pub fn render(f: &mut Frame, state: &mut TuiState) {
     }
 }
 
-fn render_title(f: &mut Frame, area: Rect) {
-    let title = Paragraph::new("Olenro TUI  v1.0.0   [Tab/Shift+Tab] switch panel   [q] quit")
-        .style(
+fn render_title(f: &mut Frame, area: Rect, state: &TuiState) {
+    let line = Line::from(vec![
+        Span::styled(
+            "Olenro TUI  v2.0.0   ",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("App: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            format!("< {} >", state.active_app_name()),
             Style::default()
-                .bg(BG)
-                .fg(Color::Cyan)
+                .fg(Color::Black)
+                .bg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
-        )
+        ),
+        Span::styled(
+            "  [/] app   [Tab] panel   [q] quit",
+            Style::default().fg(Color::Cyan),
+        ),
+    ]);
+    let title = Paragraph::new(line)
+        .style(Style::default().bg(BG))
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(title, area);
 }
 
-fn render_tabs(f: &mut Frame, area: Rect, state: &TuiState) {
-    let tab_names = [
-        (Tab::Providers, "Providers"),
-        (Tab::Mcp, "MCP"),
-        (Tab::Prompts, "Prompts"),
-        (Tab::Skills, "Skills"),
-        (Tab::Sessions, "Sessions"),
-        (Tab::Usage, "Usage"),
-        (Tab::Proxy, "Proxy"),
-        (Tab::Settings, "Settings"),
-    ];
+/// Short label for a tab in the navigation bar.
+fn tab_label(tab: Tab) -> &'static str {
+    match tab {
+        Tab::Dashboard => "Dashboard",
+        Tab::Providers => "Providers",
+        Tab::Mcp => "MCP",
+        Tab::Prompts => "Prompts",
+        Tab::Skills => "Skills",
+        Tab::Discover => "Discover",
+        Tab::Agents => "Agents",
+        Tab::Sessions => "Sessions",
+        Tab::Usage => "Usage",
+        Tab::Proxy => "Proxy",
+        Tab::Universal => "Universal",
+        Tab::Workspace => "Workspace",
+        Tab::OpenClawEnv => "Env",
+        Tab::OpenClawTools => "Tools",
+        Tab::OpenClawAgents => "Agent Defaults",
+        Tab::HermesMemory => "Memory",
+        Tab::Settings => "Settings",
+    }
+}
 
+fn render_tabs(f: &mut Frame, area: Rect, state: &TuiState) {
     let mut spans: Vec<Span> = Vec::new();
-    for (tab, name) in tab_names {
+    for tab in state.visible_tabs() {
+        let name = tab_label(tab);
         let style = if state.current_tab == tab {
             Style::default()
                 .fg(Color::Black)
@@ -94,13 +120,22 @@ fn render_tabs(f: &mut Frame, area: Rect, state: &TuiState) {
 
 fn render_content(f: &mut Frame, area: Rect, state: &mut TuiState) {
     match state.current_tab {
+        Tab::Dashboard => render_dashboard(f, area, state),
         Tab::Providers => render_providers(f, area, state),
         Tab::Mcp => render_mcp(f, area, state),
         Tab::Prompts => render_prompts(f, area, state),
         Tab::Skills => render_skills(f, area, state),
+        Tab::Discover => render_discover(f, area, state),
+        Tab::Agents => render_agents(f, area, state),
         Tab::Sessions => render_sessions(f, area, state),
         Tab::Usage => render_usage(f, area, state),
         Tab::Proxy => render_proxy(f, area, state),
+        Tab::Universal => render_universal(f, area, state),
+        Tab::Workspace => render_workspace(f, area, state),
+        Tab::OpenClawEnv => render_openclaw_env(f, area, state),
+        Tab::OpenClawTools => render_openclaw_tools(f, area, state),
+        Tab::OpenClawAgents => render_openclaw_agents(f, area, state),
+        Tab::HermesMemory => render_hermes_memory(f, area, state),
         Tab::Settings => render_settings(f, area, state),
     }
 }
@@ -115,6 +150,111 @@ fn row_style(selected: bool) -> Style {
     } else {
         Style::default().fg(Color::White)
     }
+}
+
+/// Activity overview: live snapshot of resources, proxy and usage for the
+/// app currently being managed (mirrors the desktop Dashboard view).
+fn render_dashboard(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    use olenro_core::proxy::ProxyStatus;
+
+    let providers = state.provider_service.list_providers().unwrap_or_default();
+    let servers = state.mcp_service.list_servers().unwrap_or_default();
+    let prompts = state.prompt_service.list_prompts().unwrap_or_default();
+    let skills = state.skill_service.list_skills().unwrap_or_default();
+    let mcp_enabled = servers.iter().filter(|s| s.enabled).count();
+    let prompts_enabled = prompts.iter().filter(|p| p.enabled).count();
+
+    let summary = state.usage_service.summary(30).unwrap_or_default();
+
+    let status = state.proxy_service.status();
+    let cfg = state.proxy_service.config();
+    let (dot, label, color) = match status {
+        ProxyStatus::Running => ("●", "Running", Color::Green),
+        ProxyStatus::Starting => ("◐", "Starting", Color::Yellow),
+        ProxyStatus::Stopping => ("◑", "Stopping", Color::Yellow),
+        ProxyStatus::Stopped => ("○", "Stopped", Color::Gray),
+        ProxyStatus::Error => ("✗", "Error", Color::Red),
+    };
+    let taken = state.proxy_service.is_taken_over(state.active_app);
+
+    let forwarding = match state.proxy_service.resolved_target() {
+        Some(t) => providers
+            .iter()
+            .find(|p| p.id == t.provider_id)
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| t.provider_id.clone()),
+        None => "—".to_string(),
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Managing app:  "),
+            Span::styled(
+                state.active_app_name(),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("   ([/] to switch)", Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Resources",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(format!("    Providers:  {}", providers.len())),
+        Line::from(format!(
+            "    MCP:        {} enabled / {} total",
+            mcp_enabled,
+            servers.len()
+        )),
+        Line::from(format!(
+            "    Prompts:    {} enabled / {} total",
+            prompts_enabled,
+            prompts.len()
+        )),
+        Line::from(format!("    Skills:     {}", skills.len())),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Proxy",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(vec![
+            Span::raw("    Status:     "),
+            Span::styled(
+                format!("{} {}", dot, label),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!("   http://{}:{}", cfg.address, cfg.port)),
+        ]),
+        Line::from(format!("    Forwarding: {}", forwarding)),
+        Line::from(format!(
+            "    Takeover:   {} {}",
+            state.active_app_name(),
+            if taken { "ON" } else { "off" }
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Usage (last 30 days)",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(format!(
+            "    Requests:   {}    Cost: {}",
+            summary.requests,
+            fmt_cost(summary.cost)
+        )),
+        Line::from(format!(
+            "    Tokens:     in {}  /  out {}",
+            summary.input_tokens, summary.output_tokens
+        )),
+    ];
+
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(" Dashboard ".to_string()))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(paragraph, area);
 }
 
 fn render_providers(f: &mut Frame, area: Rect, state: &mut TuiState) {
@@ -266,10 +406,101 @@ fn render_skills(f: &mut Frame, area: Rect, state: &mut TuiState) {
     f.render_widget(list, area);
 }
 
+/// skills.sh marketplace discovery: popular list or search results.
+fn render_discover(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    if state.discover_results.is_empty() {
+        let msg = if state.discover_loaded {
+            "No skills found. Press [s] to search skills.sh, [r] for popular."
+        } else {
+            "Loading skills.sh… (if it stays empty, press [r] to retry — needs network)"
+        };
+        render_empty(f, area, " Discover (skills.sh) ", msg);
+        return;
+    }
+
+    let items: Vec<ListItem> = state
+        .discover_results
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            ListItem::new(format!(
+                "{}{:<26} {:>7} ↓  {}/{}",
+                prefix,
+                truncate(&s.name, 26),
+                s.installs,
+                s.repo_owner,
+                s.repo_name
+            ))
+            .style(row_style(selected))
+        })
+        .collect();
+
+    let label = if state.discover_label.is_empty() {
+        format!("({})", state.discover_results.len())
+    } else {
+        state.discover_label.clone()
+    };
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " Discover · skills.sh · {}  [Enter/i] install  [s] search  [r] popular ",
+            label
+        )));
+    f.render_widget(list, area);
+}
+
+/// Claude subagents from `~/.claude/agents/` (user) and `.claude/agents/` (project).
+fn render_agents(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    let agents = olenro_core::claude_agents::list_agents();
+    if agents.is_empty() {
+        render_empty(
+            f,
+            area,
+            " Agents ",
+            "No subagents. Press [+]/[a] to create one in ~/.claude/agents.",
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = agents
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            let scope = match a.scope {
+                olenro_core::claude_agents::AgentScope::User => "usr",
+                olenro_core::claude_agents::AgentScope::Project => "prj",
+            };
+            let model = a.model.as_deref().unwrap_or("-");
+            let desc = a.description.as_deref().unwrap_or("");
+            ListItem::new(format!(
+                "{}[{}] {:<20} {:<8} {}",
+                prefix,
+                scope,
+                truncate(&a.name, 20),
+                truncate(model, 8),
+                truncate(desc, 40)
+            ))
+            .style(row_style(selected))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " Agents ({})  [Enter] details  [+] add  [d] delete ",
+            agents.len()
+        )));
+    f.render_widget(list, area);
+}
+
 fn render_sessions(f: &mut Frame, area: Rect, state: &mut TuiState) {
     let sessions = state
         .session_manager
-        .list_sessions(&olenro_core::provider::AppType::Claude)
+        .list_sessions(&state.active_app)
         .unwrap_or_default();
 
     if sessions.is_empty() {
@@ -277,7 +508,7 @@ fn render_sessions(f: &mut Frame, area: Rect, state: &mut TuiState) {
             f,
             area,
             " Sessions ",
-            "No Claude sessions found under ~/.claude/projects.",
+            &format!("No {} sessions found.", state.active_app_name()),
         );
         return;
     }
@@ -398,6 +629,42 @@ fn usage_with_data<'a>(
             fmt_cost(p.cost)
         )));
     }
+
+    // Daily trend: aggregate the per-provider/day rollups by date.
+    let rollups = state.usage_service.list_recent(days).unwrap_or_default();
+    if !rollups.is_empty() {
+        use std::collections::BTreeMap;
+        let mut by_date: BTreeMap<String, (i64, f64)> = BTreeMap::new();
+        for r in &rollups {
+            let e = by_date.entry(r.date.clone()).or_insert((0, 0.0));
+            e.0 += r.requests;
+            e.1 += r.cost;
+        }
+        // Show the most recent 14 days.
+        let recent: Vec<(String, (i64, f64))> = by_date
+            .into_iter()
+            .rev()
+            .take(14)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let day_max = recent.iter().map(|(_, (req, _))| *req as usize).max().unwrap_or(0);
+
+        text.push(Line::from(""));
+        text.push(Line::from("  Daily Trend (requests / cost)"));
+        for (date, (req, cost)) in &recent {
+            let bar = ascii_bar(*req as usize, day_max, 24);
+            text.push(Line::from(format!(
+                "  {:<10} {:<24} {:>5}  {}",
+                date,
+                bar,
+                req,
+                fmt_cost(*cost)
+            )));
+        }
+    }
+
     text
 }
 
@@ -507,26 +774,27 @@ fn render_proxy(f: &mut Frame, area: Rect, state: &mut TuiState) {
             }
         },
         {
-            use olenro_core::provider::AppType as ProviderAppType;
-            let taken = state.proxy_service.is_taken_over(ProviderAppType::Claude);
+            let app = state.active_app;
+            let name = state.active_app_name();
+            let taken = state.proxy_service.is_taken_over(app);
             if taken {
                 Line::from(vec![
                     Span::raw("  Takeover: "),
                     Span::styled(
-                        "Claude ON",
+                        format!("{} ON", name),
                         Style::default()
                             .fg(Color::Green)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
-                        "  (~/.claude points at this proxy)",
+                        "  (live config points at this proxy)",
                         Style::default().fg(Color::DarkGray),
                     ),
                 ])
             } else {
                 Line::from(vec![
                     Span::raw("  Takeover: "),
-                    Span::styled("Claude off", Style::default().fg(Color::Gray)),
+                    Span::styled(format!("{} off", name), Style::default().fg(Color::Gray)),
                 ])
             }
         },
@@ -537,13 +805,367 @@ fn render_proxy(f: &mut Frame, area: Rect, state: &mut TuiState) {
             Span::styled("[x] ", Style::default().fg(Color::Cyan)),
             Span::raw("stop proxy    "),
             Span::styled("[t] ", Style::default().fg(Color::Cyan)),
-            Span::raw("toggle Claude takeover"),
+            Span::raw("toggle takeover"),
         ]),
     ];
 
     let paragraph = Paragraph::new(text)
         .style(Style::default().bg(BG).fg(Color::White))
         .block(panel(" Proxy ".to_string()))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+/// Universal providers (cross-app shared base_url/api_key), selectable list.
+fn render_universal(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    let providers = state.universal_service.list().unwrap_or_default();
+    if providers.is_empty() {
+        render_empty(
+            f,
+            area,
+            " Universal Providers ",
+            "No universal providers. Press [+]/[a] to add one (shared across apps).",
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = providers
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            // App badges: lit letter when targeted, dim dot otherwise.
+            let badge = |on: bool, ch: char| if on { ch } else { '·' };
+            let apps = format!(
+                "[{}{}{}]",
+                badge(p.apps.claude, 'C'),
+                badge(p.apps.codex, 'X'),
+                badge(p.apps.gemini, 'G'),
+            );
+            ListItem::new(format!(
+                "{}{} {:<18} {}",
+                prefix,
+                apps,
+                truncate(&p.name, 18),
+                truncate(&p.base_url, 44)
+            ))
+            .style(row_style(selected))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " Universal ({})  [C]laude [X]codex [G]emini  [Enter] cycle apps  [e] edit  [+] add  [d] delete ",
+            providers.len()
+        )));
+    f.render_widget(list, area);
+}
+
+/// OpenClaw workspace: whitelisted markdown files (top) + daily memory files
+/// as a selectable list (bottom).
+fn render_workspace(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    use olenro_core::openclaw_workspace as ws;
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(12), Constraint::Min(0)])
+        .split(area);
+
+    // --- Workspace files (info) ---
+    let files = ws::list_workspace_files();
+    let mut text = vec![Line::from("")];
+    for fi in &files {
+        let (mark, color) = if fi.exists {
+            ("✓", Color::Green)
+        } else {
+            ("·", Color::DarkGray)
+        };
+        let detail = if fi.exists {
+            format!("{} bytes", fi.size_bytes)
+        } else {
+            "not created".to_string()
+        };
+        text.push(Line::from(vec![
+            Span::styled(format!("  {} ", mark), Style::default().fg(color)),
+            Span::raw(format!("{:<14} ", fi.filename)),
+            Span::styled(detail, Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+    let info = Paragraph::new(text)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(" Workspace Files (~/.openclaw/workspace) ".to_string()));
+    f.render_widget(info, chunks[0]);
+
+    // --- Daily memory files (selectable) ---
+    let memory = ws::list_daily_memory_files().unwrap_or_default();
+    if memory.is_empty() {
+        render_empty(
+            f,
+            chunks[1],
+            " Daily Memory ",
+            "No daily memory files under workspace/memory.",
+        );
+        return;
+    }
+    let items: Vec<ListItem> = memory
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            let preview = m.preview.replace('\n', " ");
+            ListItem::new(format!(
+                "{}{:<14} {:>7} B  {}",
+                prefix,
+                m.date,
+                m.size_bytes,
+                truncate(&preview, 50)
+            ))
+            .style(row_style(selected))
+        })
+        .collect();
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " Daily Memory ({})  [Enter] preview  [d] delete ",
+            memory.len()
+        )));
+    f.render_widget(list, chunks[1]);
+}
+
+/// OpenClaw env vars (`env` section of openclaw.json), selectable list.
+fn render_openclaw_env(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    use olenro_core::app_config_writers::openclaw_config as oc;
+    let vars = oc::get_env_config().map(|c| c.vars).unwrap_or_default();
+    if vars.is_empty() {
+        render_empty(
+            f,
+            area,
+            " OpenClaw Env ",
+            "No env vars. Press [+]/[a] to add one (writes ~/.openclaw/openclaw.json).",
+        );
+        return;
+    }
+
+    let mut keys: Vec<&String> = vars.keys().collect();
+    keys.sort();
+    let items: Vec<ListItem> = keys
+        .iter()
+        .enumerate()
+        .map(|(i, k)| {
+            let selected = i == state.selected_index;
+            let prefix = if selected { "> " } else { "  " };
+            let val = match vars.get(*k) {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(v) => v.to_string(),
+                None => String::new(),
+            };
+            ListItem::new(format!("{}{} = {}", prefix, k, truncate(&val, 60)))
+                .style(row_style(selected))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(format!(
+            " OpenClaw Env ({})  [+] add  [d] delete ",
+            vars.len()
+        )));
+    f.render_widget(list, area);
+}
+
+/// OpenClaw tools config (`tools` section): profile + allow/deny lists.
+fn render_openclaw_tools(f: &mut Frame, area: Rect, _state: &mut TuiState) {
+    use olenro_core::app_config_writers::openclaw_config as oc;
+    let tools = oc::get_tools_config().unwrap_or(oc::OpenClawToolsConfig {
+        profile: None,
+        allow: Vec::new(),
+        deny: Vec::new(),
+        extra: Default::default(),
+    });
+
+    let mut text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Profile:  "),
+            Span::styled(
+                tools.profile.clone().unwrap_or_else(|| "(none)".to_string()),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "   [p] cycle (minimal/coding/messaging/full/none)",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  Allow ({})", tools.allow.len()),
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        )),
+    ];
+    if tools.allow.is_empty() {
+        text.push(Line::from(Span::styled(
+            "    (empty)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    for entry in &tools.allow {
+        text.push(Line::from(format!("    + {}", entry)));
+    }
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        format!("  Deny ({})", tools.deny.len()),
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+    )));
+    if tools.deny.is_empty() {
+        text.push(Line::from(Span::styled(
+            "    (empty)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    for entry in &tools.deny {
+        text.push(Line::from(format!("    - {}", entry)));
+    }
+
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(" OpenClaw Tools ".to_string()))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+/// OpenClaw agent defaults (`agents.defaults`): default model + catalog.
+fn render_openclaw_agents(f: &mut Frame, area: Rect, _state: &mut TuiState) {
+    use olenro_core::app_config_writers::openclaw_config as oc;
+    let model = oc::get_default_model().ok().flatten();
+    let catalog = oc::get_model_catalog().ok().flatten().unwrap_or_default();
+
+    let mut text = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Default Model",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )),
+    ];
+    match &model {
+        Some(m) => {
+            text.push(Line::from(vec![
+                Span::raw("    Primary:   "),
+                Span::styled(
+                    m.primary.clone(),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("   [e] edit", Style::default().fg(Color::DarkGray)),
+            ]));
+            if m.fallbacks.is_empty() {
+                text.push(Line::from("    Fallbacks: (none)"));
+            } else {
+                text.push(Line::from(format!(
+                    "    Fallbacks: {}",
+                    m.fallbacks.join(", ")
+                )));
+            }
+        }
+        None => text.push(Line::from(vec![
+            Span::styled(
+                "    Not set",
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled("   [e] set primary", Style::default().fg(Color::DarkGray)),
+        ])),
+    }
+
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        format!("  Model Catalog ({})", catalog.len()),
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+    )));
+    if catalog.is_empty() {
+        text.push(Line::from(Span::styled(
+            "    (none)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        let mut entries: Vec<(&String, &oc::OpenClawModelCatalogEntry)> = catalog.iter().collect();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+        for (id, entry) in entries {
+            let alias = entry
+                .alias
+                .as_deref()
+                .map(|a| format!("  (alias: {})", a))
+                .unwrap_or_default();
+            text.push(Line::from(format!("    {}{}", id, alias)));
+        }
+    }
+
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(" OpenClaw Agent Defaults ".to_string()))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+/// Hermes memory blobs (MEMORY.md / USER.md): enabled state, char budget, preview.
+fn render_hermes_memory(f: &mut Frame, area: Rect, state: &mut TuiState) {
+    use olenro_core::app_config_writers::hermes_config as hc;
+
+    let limits = hc::read_memory_limits().unwrap_or_default();
+    let mem = hc::read_memory(hc::MemoryKind::Memory).unwrap_or_default();
+    let user = hc::read_memory(hc::MemoryKind::User).unwrap_or_default();
+
+    let rows = [
+        ("MEMORY.md", mem.chars().count(), limits.memory, limits.memory_enabled, &mem),
+        ("USER.md", user.chars().count(), limits.user, limits.user_enabled, &user),
+    ];
+
+    let mut text: Vec<Line> = vec![Line::from("")];
+    for (i, (name, used, budget, enabled, content)) in rows.iter().enumerate() {
+        let selected = i == state.selected_index;
+        let prefix = if selected { "> " } else { "  " };
+        let toggle = if *enabled { "[ON] " } else { "[off]" };
+        let toggle_color = if *enabled { Color::Green } else { Color::DarkGray };
+        let over = used > budget;
+        let budget_color = if over { Color::Red } else { Color::White };
+        text.push(Line::from(vec![
+            Span::styled(
+                format!("{}{} ", prefix, toggle),
+                Style::default().fg(toggle_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{:<10} ", name),
+                row_style(selected),
+            ),
+            Span::styled(
+                format!("{} / {} chars", used, budget),
+                Style::default().fg(budget_color),
+            ),
+            if over {
+                Span::styled("  (over budget)", Style::default().fg(Color::Red))
+            } else {
+                Span::raw("")
+            },
+        ]));
+        let preview = content.replace('\n', " ");
+        text.push(Line::from(Span::styled(
+            format!("      {}", truncate(&preview, 80)),
+            Style::default().fg(Color::DarkGray),
+        )));
+        text.push(Line::from(""));
+    }
+    text.push(Line::from(Span::styled(
+        "  [Enter] toggle enabled.  Edit content via `olenro` / the Hermes web UI.",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().bg(BG).fg(Color::White))
+        .block(panel(" Hermes Memory ".to_string()))
         .wrap(ratatui::widgets::Wrap { trim: true });
     f.render_widget(paragraph, area);
 }
@@ -561,9 +1183,10 @@ fn render_settings(f: &mut Frame, area: Rect, state: &mut TuiState) {
         Line::from(""),
         Line::from(format!("  Database:   {}", db_path)),
         Line::from(format!("  Config Dir: {}", config_dir)),
+        Line::from(format!("  App:        {}", state.active_app_name())),
         Line::from(""),
         Line::from(Span::styled(
-            "  Backup / restore / git-sync available via `olenro git-sync` and `olenro config`.",
+            "  Git-sync / backup-restore are not yet wired into core (CLI commands are stubs).",
             Style::default().fg(Color::DarkGray),
         )),
     ];
@@ -592,12 +1215,34 @@ fn render_status(f: &mut Frame, area: Rect, state: &TuiState) {
             Tab::Skills => {
                 "[↑↓] select  [Enter/s] update  [+] install  [d] uninstall  [Tab] panel  [q] quit"
             }
+            Tab::Agents => {
+                "[↑↓] select  [Enter] details  [+] add  [d] delete  [Tab] panel  [q] quit"
+            }
+            Tab::Discover => {
+                "[↑↓] select  [Enter/i] install  [s] search  [r] popular  [Tab] panel  [q] quit"
+            }
             Tab::Sessions => {
                 "[↑↓] select  [Enter] details  [r] resume  [d] delete  [Tab] panel  [q] quit"
             }
             Tab::Proxy => "[s] start  [x] stop  [t] takeover  [Tab] panel  [q] quit",
+            Tab::Universal => {
+                "[↑↓] select  [Enter] cycle apps  [e] edit  [+] add  [d] delete  [Tab] panel  [q] quit"
+            }
+            Tab::Workspace => {
+                "[↑↓] select  [Enter] preview  [d] delete memory  [/] app  [Tab] panel  [q] quit"
+            }
+            Tab::OpenClawEnv => {
+                "[↑↓] select  [+] add  [d] delete  [/] app  [Tab] panel  [q] quit"
+            }
+            Tab::OpenClawTools => "[p] cycle profile  [/] app  [Tab] panel  [q] quit",
+            Tab::OpenClawAgents => "[e] set primary model  [/] app  [Tab] panel  [q] quit",
+            Tab::HermesMemory => {
+                "[↑↓] select  [Enter] toggle enabled  [/] app  [Tab] panel  [q] quit"
+            }
             // Read-only panels: don't advertise add/edit/delete.
-            Tab::Usage | Tab::Settings => "[Tab/Shift+Tab] switch panel  [q] quit",
+            Tab::Dashboard | Tab::Usage | Tab::Settings => {
+                "[/] switch app  [Tab/Shift+Tab] switch panel  [q] quit"
+            }
         }
     };
 
@@ -764,11 +1409,98 @@ fn render_dialog(f: &mut Frame, area: Rect, state: &TuiState) {
             ],
             7,
         ),
+        DialogMode::AddOpenClawEnv => (
+            " Add OpenClaw Env Var ",
+            vec![
+                Line::from(""),
+                field_line("Name:", &state.name_input, state.input_field == 0),
+                field_line("Value:", &state.content_input, state.input_field == 1),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Value may be JSON (e.g. true, 42, \"text\").  [Tab] next  [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            8,
+        ),
+        DialogMode::SetOpenClawPrimaryModel => (
+            " Set Default Model ",
+            vec![
+                Line::from(""),
+                field_line("Primary:", &state.content_input, true),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Format: provider/model   [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            7,
+        ),
+        DialogMode::AddUniversal => (
+            " Add Universal Provider ",
+            vec![
+                Line::from(""),
+                field_line("Name:", &state.name_input, state.input_field == 0),
+                field_line("Base URL:", &state.endpoint_input, state.input_field == 1),
+                field_line("API Key:", &state.api_key_input, state.input_field == 2),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Shared across apps; pick targets with [Enter] after adding.  [Tab] next  [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            9,
+        ),
+        DialogMode::EditUniversal(_) => (
+            " Edit Universal Provider ",
+            vec![
+                Line::from(""),
+                field_line("Name:", &state.name_input, state.input_field == 0),
+                field_line("Base URL:", &state.endpoint_input, state.input_field == 1),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Tab] next  [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            8,
+        ),
+        DialogMode::SearchSkills => (
+            " Search skills.sh ",
+            vec![
+                Line::from(""),
+                field_line("Query:", &state.name_input, true),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  At least 2 characters.  [Enter] search  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            7,
+        ),
+        DialogMode::AddAgent => (
+            " Create Subagent ",
+            vec![
+                Line::from(""),
+                field_line("Name:", &state.name_input, state.input_field == 0),
+                field_line("Describe:", &state.content_input, state.input_field == 1),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Writes ~/.claude/agents/<name>.md; edit it for the full prompt.  [Tab] next  [Enter] save  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            8,
+        ),
         DialogMode::DeleteProvider(_)
         | DialogMode::DeleteMcp(_)
         | DialogMode::DeletePrompt(_)
         | DialogMode::DeleteSkill(_)
-        | DialogMode::DeleteSession(_) => (
+        | DialogMode::DeleteSession(_)
+        | DialogMode::DeleteOpenClawEnv(_)
+        | DialogMode::DeleteOpenClawMemory(_)
+        | DialogMode::DeleteUniversal(_)
+        | DialogMode::DeleteAgent(_, _) => (
             " Confirm Delete ",
             vec![
                 Line::from(""),

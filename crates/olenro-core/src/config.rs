@@ -437,6 +437,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn cli_database_path_is_separate_from_app_database_path() {
         let old_home = std::env::var_os("OLENRO_TEST_HOME");
         let home = std::env::temp_dir().join(format!(

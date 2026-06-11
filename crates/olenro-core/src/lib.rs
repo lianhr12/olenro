@@ -10,11 +10,13 @@
 
 pub mod app_config;
 pub mod app_config_writers;
+pub mod claude_agents;
 pub mod config;
 pub mod core_state;
 pub mod database;
 pub mod deeplink;
 pub mod error;
+pub mod openclaw_workspace;
 pub mod pricing;
 pub mod prompt;
 pub mod prompt_files;
@@ -22,6 +24,7 @@ pub mod provider;
 pub mod provider_defaults;
 pub mod proxy;
 pub mod services;
+pub mod skills_sh;
 pub mod session_manager;
 
 // Re-exports for convenience

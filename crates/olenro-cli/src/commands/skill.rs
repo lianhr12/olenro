@@ -40,8 +40,22 @@ pub async fn list(state: &CliState) -> Result<()> {
 }
 
 pub async fn discover() -> Result<()> {
-    println!("Discovering available skills...");
-    println!("(Discovery not yet implemented - would query skill registry)");
+    println!("Popular skills on skills.sh:\n");
+    match olenro_core::skills_sh::popular(30).await {
+        Ok(result) => {
+            if result.skills.is_empty() {
+                println!("(no skills found)");
+            }
+            for s in result.skills {
+                println!(
+                    "  {:<28} {:>7} installs   {}/{}",
+                    s.name, s.installs, s.repo_owner, s.repo_name
+                );
+            }
+            println!("\nInstall with: olenro skill install <owner/repo>");
+        }
+        Err(e) => println!("Failed to reach skills.sh: {e}"),
+    }
     Ok(())
 }
 
