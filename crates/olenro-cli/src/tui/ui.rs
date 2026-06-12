@@ -51,7 +51,9 @@ pub fn render(f: &mut Frame, state: &mut TuiState) {
 fn render_title(f: &mut Frame, area: Rect, state: &TuiState) {
     let line = Line::from(vec![
         Span::styled(
-            "Olenro TUI  v2.0.0   ",
+            // Track the real crate version so the title never drifts from
+            // `olenro version`. ("v2.0.0" was a codename, not the package version.)
+            format!("Olenro TUI  v{}   ", env!("CARGO_PKG_VERSION")),
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ),
         Span::styled("App: ", Style::default().fg(Color::Gray)),

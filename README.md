@@ -155,6 +155,31 @@ For detailed guides on every feature, check out the **[User Manual](docs/user-ma
 
 ## Download & Installation
 
+### CLI / Terminal Edition (`olenro`)
+
+A standalone terminal UI with the same provider / MCP / prompt / skill / session /
+proxy management — no desktop app required.
+
+**One-line install (macOS & Linux):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lianhr12/olenro/master/install.sh | sh
+```
+
+This downloads the prebuilt binary for your OS/arch into `~/.local/bin`. Override the
+location with `OLENRO_INSTALL_DIR=…` or pin a version with `OLENRO_VERSION=cli-v2.0.0`.
+Then just run `olenro` to launch the TUI.
+
+**From source (any platform, needs the Rust toolchain):**
+
+```bash
+cargo install --git https://github.com/lianhr12/olenro olenro-cli
+```
+
+**Manual download:** grab `olenro-<target>.tar.gz` (or `.zip` on Windows) from the
+[Releases](../../releases) page (tags prefixed `cli-v`), extract, and put `olenro` on
+your `PATH`.
+
 ### System Requirements
 
 - **Windows**: Windows 10 and above
