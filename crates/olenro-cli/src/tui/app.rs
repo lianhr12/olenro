@@ -845,6 +845,20 @@ fn submit_dialog(state: &mut TuiState) {
                 state.set_status("Name is required");
                 return;
             }
+            // OpenClaw requires an explicit, validated provider key (the stable
+            // `models.providers.<key>` identifier). Validate before creating.
+            let provider_key = if state.add_provider_wants_key() {
+                let key = state.provider_key_input.trim().to_string();
+                if !olenro_core::services::provider::is_valid_provider_key(&key) {
+                    state.set_status(
+                        "Provider key required: lowercase letters, digits and single hyphens",
+                    );
+                    return;
+                }
+                Some(key)
+            } else {
+                None
+            };
             let api_key = if state.api_key_input.trim().is_empty() {
                 None
             } else {
@@ -890,7 +904,17 @@ fn submit_dialog(state: &mut TuiState) {
                 }
             };
             match result {
-                Ok(p) => state.set_status(format!("Added provider: {}", p.name)),
+                Ok(p) => {
+                    // Persist the explicit OpenClaw provider key on the new provider.
+                    if let Some(key) = provider_key {
+                        if let Err(e) = state.provider_service.set_provider_key(&p.id, &key) {
+                            state.set_status(format!("Added {}, but key failed: {}", p.name, e));
+                            state.close_dialog();
+                            return;
+                        }
+                    }
+                    state.set_status(format!("Added provider: {}", p.name));
+                }
                 Err(e) => state.set_status(format!("Add failed: {}", e)),
             }
         }
@@ -1264,6 +1288,23 @@ mod tests {
         assert_eq!(state.add_provider_field_count(), 4);
         draw(&mut state);
         state.close_dialog();
+
+        // OpenClaw: Add Provider gains a trailing provider-key field, prefilled
+        // from a slug of the name and routed to provider_key_input.
+        state.active_app = olenro_core::provider::AppType::OpenClaw;
+        state.current_tab = Tab::Providers;
+        handle_add(&mut state);
+        handle_add_provider_key(&mut state, KeyCode::Enter); // Custom row
+        assert!(state.add_provider_wants_key());
+        assert_eq!(state.add_provider_field_count(), 5); // +1 for the key field
+        let key_idx = state.provider_key_field_index().unwrap();
+        assert_eq!(key_idx, 4);
+        state.input_field = key_idx;
+        state.push_input_char('x');
+        assert!(state.provider_key_input.ends_with('x'));
+        draw(&mut state); // renders the key field
+        state.close_dialog();
+        state.active_app = olenro_core::provider::AppType::Claude;
 
         // OpenClaw dialogs render without panic.
         for mode in [

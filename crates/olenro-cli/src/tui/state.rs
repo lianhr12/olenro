@@ -224,6 +224,8 @@ pub struct TuiState {
     pub chosen_preset: Option<usize>,
     /// One input value per template variable of the chosen preset.
     pub template_inputs: Vec<String>,
+    /// Explicit OpenClaw provider key (only collected when managing OpenClaw).
+    pub provider_key_input: String,
     // skills.sh discovery
     pub discover_results: Vec<olenro_core::skills_sh::SkillsShDiscoverableSkill>,
     pub discover_loaded: bool,
@@ -270,6 +272,7 @@ impl TuiState {
             preset_cursor: 0,
             chosen_preset: None,
             template_inputs: Vec::new(),
+            provider_key_input: String::new(),
             discover_results: Vec::new(),
             discover_loaded: false,
             discover_label: String::new(),
@@ -358,6 +361,14 @@ impl TuiState {
         self.preset_cursor = 0;
         self.chosen_preset = None;
         self.template_inputs.clear();
+        self.provider_key_input.clear();
+    }
+
+    /// Whether the Add Provider form should collect an explicit provider key.
+    /// Mirrors the desktop app, where OpenClaw requires a `providerKey` form
+    /// field used as `models.providers.<key>`.
+    pub fn add_provider_wants_key(&self) -> bool {
+        self.active_app == AppType::OpenClaw
     }
 
     /// Presets applicable to the app currently being managed.
@@ -377,11 +388,23 @@ impl TuiState {
 
     /// Number of editable fields in the Fields stage of Add Provider.
     /// Custom: name, endpoint, api key, category. Preset: name, endpoint,
-    /// api key, then one field per template variable.
+    /// api key, then one field per template variable. When the active app
+    /// needs an explicit provider key (OpenClaw), one extra trailing field is
+    /// appended.
     pub fn add_provider_field_count(&self) -> usize {
-        match self.chosen_preset() {
+        let base = match self.chosen_preset() {
             None => 4,
             Some(p) => 3 + p.template_fields().len(),
+        };
+        base + if self.add_provider_wants_key() { 1 } else { 0 }
+    }
+
+    /// Index of the provider-key field, if present (always the last field).
+    pub fn provider_key_field_index(&self) -> Option<usize> {
+        if self.add_provider_wants_key() {
+            Some(self.add_provider_field_count() - 1)
+        } else {
+            None
         }
     }
 
@@ -409,6 +432,11 @@ impl TuiState {
                 .collect();
             self.chosen_preset = Some(idx);
         }
+        // Prefill the OpenClaw provider key with a slug of the name as a hint.
+        if self.add_provider_wants_key() {
+            self.provider_key_input =
+                olenro_core::services::provider::slugify_provider_key(&self.name_input);
+        }
         self.add_stage = AddProviderStage::Fields;
         self.input_field = 0;
     }
@@ -420,6 +448,11 @@ impl TuiState {
     /// Push a char into the currently active input field
     pub fn push_input_char(&mut self, c: char) {
         if self.dialog_mode == DialogMode::AddProvider {
+            // The provider-key field (when present) is always the last field.
+            if self.provider_key_field_index() == Some(self.input_field) {
+                self.provider_key_input.push(c);
+                return;
+            }
             match self.input_field {
                 0 => self.name_input.push(c),
                 1 => self.endpoint_input.push(c),
@@ -464,6 +497,10 @@ impl TuiState {
     /// Remove the last char from the currently active input field
     pub fn pop_input_char(&mut self) {
         if self.dialog_mode == DialogMode::AddProvider {
+            if self.provider_key_field_index() == Some(self.input_field) {
+                self.provider_key_input.pop();
+                return;
+            }
             match self.input_field {
                 0 => {
                     self.name_input.pop();

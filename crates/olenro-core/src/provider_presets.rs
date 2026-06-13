@@ -380,6 +380,7 @@ fn default_meta() -> ProviderMeta {
         codex_chat_reasoning: None,
         provider_type: None,
         github_account_id: None,
+        provider_key: None,
     }
 }
 

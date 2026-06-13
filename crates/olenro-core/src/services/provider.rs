@@ -156,6 +156,7 @@ impl ProviderService {
                 codex_chat_reasoning: None,
                 provider_type: None,
                 github_account_id: None,
+                provider_key: None,
             },
             icon: None,
             icon_color: None,
@@ -164,6 +165,25 @@ impl ProviderService {
 
         self.create_provider(provider.clone())?;
         Ok(provider)
+    }
+
+    /// Set the explicit provider key (`meta.provider_key`) for a stored
+    /// provider, used as the stable identifier inside an app's config file
+    /// (e.g. OpenClaw `models.providers.<key>`). The key must match
+    /// `^[a-z0-9]+(-[a-z0-9]+)*$`.
+    pub fn set_provider_key(&self, id: &str, key: &str) -> AppResult<()> {
+        if !is_valid_provider_key(key) {
+            return Err(AppError::Provider(format!(
+                "Invalid provider key '{key}': use lowercase letters, digits and single hyphens"
+            )));
+        }
+        match self.get_provider(id)? {
+            Some(mut p) => {
+                p.meta.provider_key = Some(key.to_string());
+                self.update_provider(p)
+            }
+            None => Err(AppError::NotFound(format!("provider not found: {id}"))),
+        }
     }
 
     /// Create a provider from a built-in preset, substituting template
@@ -490,33 +510,78 @@ fn write_hermes_live(provider: &Provider) -> AppResult<()> {
 }
 
 /// Write a provider's config into OpenClaw's `~/.openclaw/openclaw.json`,
-/// storing it under `models.providers.<id>`.
+/// storing it under `models.providers.<key>`.
+///
+/// The key is the user-specified `meta.provider_key` when present (matching the
+/// desktop app, where the OpenClaw provider key is an explicit form field);
+/// otherwise it falls back to a slug derived from the provider name.
 fn write_openclaw_live(provider: &Provider) -> AppResult<()> {
     use crate::app_config_writers::openclaw_config;
 
-    // Use the provider's name (slugified) as the OpenClaw provider id.
-    let provider_id: String = provider
-        .name
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect();
-    let provider_id = provider_id.trim_matches('-').to_string();
-    let provider_id = if provider_id.is_empty() {
-        "custom".to_string()
-    } else {
-        provider_id
-    };
+    let provider_key = provider
+        .meta
+        .provider_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| slugify_provider_key(&provider.name));
 
     // The OpenClaw provider config lives in settings_config directly (the
     // preset snapshot stores the OpenClawProviderConfig shape there).
-    openclaw_config::set_provider(&provider_id, provider.settings_config.clone())?;
+    openclaw_config::set_provider(&provider_key, provider.settings_config.clone())?;
     log::info!(
-        "Wrote OpenClaw config.json for provider: {} (id={})",
+        "Wrote OpenClaw openclaw.json for provider: {} (key={})",
         provider.name,
-        provider_id
+        provider_key
     );
     Ok(())
+}
+
+/// Whether a string is a valid app provider key: `^[a-z0-9]+(-[a-z0-9]+)*$`
+/// (lowercase alphanumerics separated by single hyphens). Mirrors the desktop
+/// `keyPattern` validation in ProviderForm.tsx.
+pub fn is_valid_provider_key(key: &str) -> bool {
+    if key.is_empty() {
+        return false;
+    }
+    let mut prev_hyphen = true; // leading hyphen not allowed
+    for c in key.chars() {
+        match c {
+            'a'..='z' | '0'..='9' => prev_hyphen = false,
+            '-' => {
+                if prev_hyphen {
+                    return false; // leading or doubled hyphen
+                }
+                prev_hyphen = true;
+            }
+            _ => return false,
+        }
+    }
+    !prev_hyphen // trailing hyphen not allowed
+}
+
+/// Derive a valid provider key from an arbitrary name (lowercase, non-alnum →
+/// hyphen, collapse/trim hyphens). Falls back to "custom" when empty.
+pub fn slugify_provider_key(name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_hyphen = true;
+    for c in name.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            prev_hyphen = false;
+        } else if !prev_hyphen {
+            out.push('-');
+            prev_hyphen = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "custom".to_string()
+    } else {
+        out
+    }
 }
 
 /// Write a provider's endpoint + credentials into Claude Code's
@@ -684,6 +749,61 @@ mod tests {
         // Unrelated pre-existing keys preserved.
         assert_eq!(v["permissions"]["allow"][0].as_str(), Some("Bash"));
         assert_eq!(v["env"]["FOO"].as_str(), Some("bar"));
+
+        std::env::remove_var("OLENRO_TEST_HOME");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn provider_key_validation_matches_desktop_pattern() {
+        assert!(is_valid_provider_key("my-provider"));
+        assert!(is_valid_provider_key("openrouter"));
+        assert!(is_valid_provider_key("a1-b2-c3"));
+        assert!(!is_valid_provider_key(""));
+        assert!(!is_valid_provider_key("-leading"));
+        assert!(!is_valid_provider_key("trailing-"));
+        assert!(!is_valid_provider_key("double--hyphen"));
+        assert!(!is_valid_provider_key("UpperCase"));
+        assert!(!is_valid_provider_key("has space"));
+        assert!(!is_valid_provider_key("under_score"));
+    }
+
+    #[test]
+    fn slugify_produces_valid_keys() {
+        assert_eq!(slugify_provider_key("My OpenClaw"), "my-openclaw");
+        assert_eq!(slugify_provider_key("Acme  AI!!"), "acme-ai");
+        assert_eq!(slugify_provider_key("  "), "custom");
+        assert!(is_valid_provider_key(&slugify_provider_key("Z@@@z")));
+    }
+
+    #[test]
+    #[serial]
+    fn openclaw_switch_uses_explicit_provider_key() {
+        let home = std::env::temp_dir().join(format!("olenro-ockey-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        std::env::set_var("OLENRO_TEST_HOME", &home);
+
+        let svc = ProviderService::new(home.join("olenro.db"));
+        let p = svc
+            .add_provider(
+                "My OpenClaw",
+                "https://oc.example.com",
+                ProviderCategory::Custom,
+                Some("k"),
+            )
+            .unwrap();
+
+        // Bad key rejected.
+        assert!(svc.set_provider_key(&p.id, "Bad Key").is_err());
+        // Explicit key honored over the name slug.
+        svc.set_provider_key(&p.id, "my-custom-key").unwrap();
+        svc.switch_provider(&p.id, AppType::OpenClaw).unwrap();
+
+        let text = std::fs::read_to_string(home.join(".openclaw").join("openclaw.json")).unwrap();
+        let json: serde_json::Value = json5::from_str(&text).unwrap();
+        assert!(json["models"]["providers"]["my-custom-key"].is_object());
+        assert!(json["models"]["providers"]["my-openclaw"].is_null());
 
         std::env::remove_var("OLENRO_TEST_HOME");
         let _ = std::fs::remove_dir_all(&home);

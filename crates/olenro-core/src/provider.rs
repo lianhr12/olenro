@@ -176,6 +176,13 @@ pub struct ProviderMeta {
     /// GitHub account ID
     #[serde(default)]
     pub github_account_id: Option<String>,
+
+    /// Explicit provider key used as the stable identifier inside an app's
+    /// config file (`models.providers.<key>` for OpenClaw, etc.). When set,
+    /// switching writes under this key instead of deriving one from the name.
+    /// Must match `^[a-z0-9]+(-[a-z0-9]+)*$`.
+    #[serde(default)]
+    pub provider_key: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -512,6 +519,7 @@ mod tests {
                 codex_chat_reasoning: None,
                 provider_type: Some(ProviderType::GitHubCopilot),
                 github_account_id: None,
+                provider_key: None,
             },
             icon: None,
             icon_color: None,

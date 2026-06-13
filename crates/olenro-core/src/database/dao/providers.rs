@@ -147,6 +147,7 @@ impl<'a> ProvidersDao<'a> {
             codex_chat_reasoning: None,
             provider_type: None,
             github_account_id: None,
+            provider_key: None,
         });
 
         let category_str: String = row.get(4).unwrap_or_default();

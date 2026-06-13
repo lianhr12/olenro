@@ -1487,6 +1487,13 @@ fn render_dialog(f: &mut Frame, area: Rect, state: &TuiState) {
                                 .unwrap_or("");
                             lines.push(template_field_line(&tf.label, value, active));
                         }
+                        if let Some(idx) = state.provider_key_field_index() {
+                            lines.push(template_field_line(
+                                "Provider Key",
+                                &state.provider_key_input,
+                                state.input_field == idx,
+                            ));
+                        }
                         lines.push(Line::from(""));
                         if let Some(url) = preset.api_key_url() {
                             lines.push(Line::from(Span::styled(
@@ -1518,6 +1525,13 @@ fn render_dialog(f: &mut Frame, area: Rect, state: &TuiState) {
                                 cat.to_string()
                             }),
                         ]));
+                        if let Some(idx) = state.provider_key_field_index() {
+                            lines.push(template_field_line(
+                                "Provider Key",
+                                &state.provider_key_input,
+                                state.input_field == idx,
+                            ));
+                        }
                         lines.push(Line::from(""));
                         lines.push(Line::from(Span::styled(
                             "  [Tab] next  [←/→] category  [Enter] save  [Esc] back",
