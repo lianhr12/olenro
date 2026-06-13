@@ -7,7 +7,7 @@ use std::io;
 
 use olenro_core::prompt::CreatePromptInput;
 
-use crate::tui::state::{DialogMode, Tab, TuiState, CATEGORIES};
+use crate::tui::state::{AddProviderStage, DialogMode, Tab, TuiState, CATEGORIES};
 use crate::tui::ui;
 
 /// Run the TUI application.
@@ -273,6 +273,12 @@ fn handle_dialog_key(state: &mut TuiState, code: KeyCode) {
         return;
     }
 
+    // Add Provider is a two-stage dialog (preset picker → fields).
+    if state.dialog_mode == DialogMode::AddProvider {
+        handle_add_provider_key(state, code);
+        return;
+    }
+
     match code {
         KeyCode::Esc => state.close_dialog(),
         KeyCode::Tab => {
@@ -301,6 +307,58 @@ fn handle_dialog_key(state: &mut TuiState, code: KeyCode) {
         KeyCode::Backspace => state.pop_input_char(),
         KeyCode::Char(c) => state.push_input_char(c),
         _ => {}
+    }
+}
+
+/// Key handling for the two-stage Add Provider dialog.
+fn handle_add_provider_key(state: &mut TuiState, code: KeyCode) {
+    match state.add_stage {
+        AddProviderStage::SelectPreset => match code {
+            KeyCode::Esc => state.close_dialog(),
+            KeyCode::Up => {
+                state.preset_cursor = state.preset_cursor.saturating_sub(1);
+            }
+            KeyCode::Down => {
+                let max = state.preset_row_count();
+                if state.preset_cursor + 1 < max {
+                    state.preset_cursor += 1;
+                }
+            }
+            KeyCode::Enter => state.select_preset(),
+            _ => {}
+        },
+        AddProviderStage::Fields => match code {
+            // Back to the preset picker; a second Esc there closes the dialog.
+            KeyCode::Esc => {
+                state.add_stage = AddProviderStage::SelectPreset;
+                state.input_field = 0;
+            }
+            KeyCode::Tab => {
+                let count = state.add_provider_field_count();
+                if count > 0 {
+                    state.input_field = (state.input_field + 1) % count;
+                }
+            }
+            KeyCode::BackTab => {
+                let count = state.add_provider_field_count();
+                if count > 0 {
+                    state.input_field = (state.input_field + count - 1) % count;
+                }
+            }
+            KeyCode::Left => state.cycle_category(false),
+            KeyCode::Right => state.cycle_category(true),
+            KeyCode::Enter => {
+                let count = state.add_provider_field_count();
+                if count > 0 && state.input_field + 1 < count {
+                    state.input_field += 1;
+                } else {
+                    submit_dialog(state);
+                }
+            }
+            KeyCode::Backspace => state.pop_input_char(),
+            KeyCode::Char(c) => state.push_input_char(c),
+            _ => {}
+        },
     }
 }
 
@@ -783,22 +841,55 @@ fn submit_dialog(state: &mut TuiState) {
     let mode = state.dialog_mode.clone();
     match mode {
         DialogMode::AddProvider => {
-            if state.name_input.trim().is_empty() || state.endpoint_input.trim().is_empty() {
-                state.set_status("Name and endpoint are required");
+            if state.name_input.trim().is_empty() {
+                state.set_status("Name is required");
                 return;
             }
-            let category = CATEGORIES[state.category_index].1;
             let api_key = if state.api_key_input.trim().is_empty() {
                 None
             } else {
                 Some(state.api_key_input.trim())
             };
-            match state.provider_service.add_provider(
-                state.name_input.trim(),
-                state.endpoint_input.trim(),
-                category,
-                api_key,
-            ) {
+            let result = match state.chosen_preset() {
+                // Built-in preset: substitute template vars, inject the key,
+                // and apply the (possibly edited) endpoint override.
+                Some(preset) => {
+                    let templates: std::collections::HashMap<String, String> = preset
+                        .template_fields()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, f)| {
+                            (
+                                f.key.clone(),
+                                state.template_inputs.get(i).cloned().unwrap_or_default(),
+                            )
+                        })
+                        .collect();
+                    let endpoint = state.endpoint_input.trim();
+                    let endpoint_override = if endpoint.is_empty() { None } else { Some(endpoint) };
+                    state.provider_service.create_from_preset(
+                        preset,
+                        api_key,
+                        &templates,
+                        endpoint_override,
+                    )
+                }
+                // Custom: free-form name/endpoint/category, as before.
+                None => {
+                    if state.endpoint_input.trim().is_empty() {
+                        state.set_status("Name and endpoint are required");
+                        return;
+                    }
+                    let category = CATEGORIES[state.category_index].1;
+                    state.provider_service.add_provider(
+                        state.name_input.trim(),
+                        state.endpoint_input.trim(),
+                        category,
+                        api_key,
+                    )
+                }
+            };
+            match result {
                 Ok(p) => state.set_status(format!("Added provider: {}", p.name)),
                 Err(e) => state.set_status(format!("Add failed: {}", e)),
             }
@@ -1143,6 +1234,34 @@ mod tests {
 
         // Confirm-delete dialog rendering
         state.dialog_mode = DialogMode::DeleteProvider("nope".into());
+        draw(&mut state);
+        state.close_dialog();
+
+        // Add Provider: preset picker → fields, with prefill + dynamic fields.
+        state.active_app = olenro_core::provider::AppType::Claude;
+        state.current_tab = Tab::Providers;
+        handle_add(&mut state);
+        assert_eq!(state.add_stage, AddProviderStage::SelectPreset);
+        draw(&mut state); // preset list renders
+        // Move to the first real preset (row 1) and select it.
+        handle_add_provider_key(&mut state, KeyCode::Down);
+        assert_eq!(state.preset_cursor, 1);
+        handle_add_provider_key(&mut state, KeyCode::Enter);
+        assert_eq!(state.add_stage, AddProviderStage::Fields);
+        assert!(state.chosen_preset().is_some());
+        // Name is prefilled from the preset.
+        assert_eq!(state.name_input, state.chosen_preset().unwrap().name());
+        draw(&mut state); // fields stage renders
+        // Esc from Fields returns to the picker rather than closing.
+        handle_add_provider_key(&mut state, KeyCode::Esc);
+        assert_eq!(state.add_stage, AddProviderStage::SelectPreset);
+        state.close_dialog();
+
+        // Custom path: row 0 keeps the editable category field.
+        handle_add(&mut state);
+        handle_add_provider_key(&mut state, KeyCode::Enter); // row 0 = Custom
+        assert!(state.chosen_preset().is_none());
+        assert_eq!(state.add_provider_field_count(), 4);
         draw(&mut state);
         state.close_dialog();
 

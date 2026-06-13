@@ -23,6 +23,7 @@ pub mod prompt;
 pub mod prompt_files;
 pub mod provider;
 pub mod provider_defaults;
+pub mod provider_presets;
 pub mod proxy;
 pub mod services;
 pub mod skills_sh;

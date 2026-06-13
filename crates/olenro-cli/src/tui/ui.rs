@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::state::{DialogMode, Tab, TuiState, CATEGORIES};
+use crate::tui::state::{AddProviderStage, DialogMode, Tab, TuiState, CATEGORIES};
 
 /// Solid panel background so the terminal wallpaper/transparency does not
 /// bleed through and hurt readability.
@@ -1373,18 +1373,135 @@ fn field_line<'a>(label: &'a str, value: &'a str, active: bool) -> Line<'a> {
     ])
 }
 
+/// Like [`field_line`] but for a dynamically-labeled template field (owned
+/// label that does not borrow from state).
+fn template_field_line(label: &str, value: &str, active: bool) -> Line<'static> {
+    let label_style = if active {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+    let value_display = if active {
+        format!("{}_", value)
+    } else {
+        value.to_string()
+    };
+    Line::from(vec![
+        Span::styled(format!("  {:<14} ", format!("{}:", label)), label_style),
+        Span::raw(value_display),
+    ])
+}
+
+/// Short label for a provider category (reuses the add-dialog category table).
+fn category_label(cat: olenro_core::provider::ProviderCategory) -> &'static str {
+    CATEGORIES
+        .iter()
+        .find(|(_, c)| *c == cat)
+        .map(|(label, _)| *label)
+        .unwrap_or("custom")
+}
+
 fn render_dialog(f: &mut Frame, area: Rect, state: &TuiState) {
     let (title, lines, height): (&str, Vec<Line>, u16) = match &state.dialog_mode {
-        DialogMode::AddProvider => {
-            let cat = CATEGORIES[state.category_index].0;
-            (
-                " Add Provider ",
-                vec![
-                    Line::from(""),
-                    field_line("Name:", &state.name_input, state.input_field == 0),
-                    field_line("Endpoint:", &state.endpoint_input, state.input_field == 1),
-                    field_line("API Key:", &state.api_key_input, state.input_field == 2),
-                    {
+        DialogMode::AddProvider => match state.add_stage {
+            // Stage 1: choose a preset (or "Custom") for the active app.
+            AddProviderStage::SelectPreset => {
+                let presets = state.add_provider_presets();
+                let total = presets.len() + 1;
+                let cursor = state.preset_cursor;
+                const WINDOW: usize = 12;
+                let start = cursor
+                    .saturating_sub(WINDOW / 2)
+                    .min(total.saturating_sub(WINDOW.min(total)));
+                let end = (start + WINDOW).min(total);
+
+                let mut lines = vec![Line::from(Span::styled(
+                    format!("  Provider preset for {}:", state.active_app_name()),
+                    Style::default().fg(Color::Gray),
+                ))];
+                for row in start..end {
+                    let selected = row == cursor;
+                    let marker = if selected { "› " } else { "  " };
+                    let (label, tag) = if row == 0 {
+                        ("Custom (blank form)".to_string(), String::new())
+                    } else {
+                        let p = &presets[row - 1];
+                        let mut tag = format!("[{}]", category_label(p.category()));
+                        if p.is_official() {
+                            tag.push_str(" official");
+                        } else if p.is_partner() {
+                            tag.push_str(" partner");
+                        }
+                        (p.name().to_string(), tag)
+                    };
+                    let style = if selected {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("{}{}", marker, label), style),
+                        Span::styled(format!("  {}", tag), Style::default().fg(Color::DarkGray)),
+                    ]));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "  {}/{}   [↑/↓] move  [Enter] select  [Esc] cancel",
+                        cursor + 1,
+                        total
+                    ),
+                    Style::default().fg(Color::DarkGray),
+                )));
+                let height = (lines.len() as u16) + 2;
+                (" Add Provider — Preset ", lines, height)
+            }
+            // Stage 2: fill the (preset-prefilled) form fields.
+            AddProviderStage::Fields => {
+                let mut lines = vec![Line::from("")];
+                lines.push(field_line("Name:", &state.name_input, state.input_field == 0));
+                lines.push(field_line(
+                    "Endpoint:",
+                    &state.endpoint_input,
+                    state.input_field == 1,
+                ));
+                lines.push(field_line(
+                    "API Key:",
+                    &state.api_key_input,
+                    state.input_field == 2,
+                ));
+
+                match state.chosen_preset() {
+                    // Preset: one input per template variable, fixed category.
+                    Some(preset) => {
+                        for (i, tf) in preset.template_fields().iter().enumerate() {
+                            let active = state.input_field == 3 + i;
+                            let value = state
+                                .template_inputs
+                                .get(i)
+                                .map(String::as_str)
+                                .unwrap_or("");
+                            lines.push(template_field_line(&tf.label, value, active));
+                        }
+                        lines.push(Line::from(""));
+                        if let Some(url) = preset.api_key_url() {
+                            lines.push(Line::from(Span::styled(
+                                format!("  Get an API key: {}", url),
+                                Style::default().fg(Color::DarkGray),
+                            )));
+                        }
+                        lines.push(Line::from(Span::styled(
+                            "  [Tab] next  [Enter] save  [Esc] back",
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                    // Custom: editable category selector on field 3.
+                    None => {
+                        let cat = CATEGORIES[state.category_index].0;
                         let active = state.input_field == 3;
                         let style = if active {
                             Style::default()
@@ -1393,24 +1510,25 @@ fn render_dialog(f: &mut Frame, area: Rect, state: &TuiState) {
                         } else {
                             Style::default().fg(Color::Gray)
                         };
-                        Line::from(vec![
+                        lines.push(Line::from(vec![
                             Span::styled("  Category:  ", style),
                             Span::raw(if active {
                                 format!("< {} >", cat)
                             } else {
                                 cat.to_string()
                             }),
-                        ])
-                    },
-                    Line::from(""),
-                    Line::from(Span::styled(
-                        "  [Tab] next  [←/→] category  [Enter] save  [Esc] cancel",
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                ],
-                10,
-            )
-        }
+                        ]));
+                        lines.push(Line::from(""));
+                        lines.push(Line::from(Span::styled(
+                            "  [Tab] next  [←/→] category  [Enter] save  [Esc] back",
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                }
+                let height = (lines.len() as u16) + 2;
+                (" Add Provider ", lines, height)
+            }
+        },
         DialogMode::EditProvider(_) => (
             " Edit Provider ",
             vec![

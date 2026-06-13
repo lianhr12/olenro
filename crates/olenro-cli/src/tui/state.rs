@@ -2,6 +2,7 @@
 
 use olenro_core::config::get_cli_database_path;
 use olenro_core::provider::{AppType, ProviderCategory};
+use olenro_core::provider_presets::{self, ProviderPreset};
 use std::path::PathBuf;
 
 use olenro_core::proxy::ProxyConfig;
@@ -97,6 +98,15 @@ pub const APPS: [(AppType, &str); 7] = [
     (AppType::OpenClaw, "OpenClaw"),
     (AppType::Hermes, "Hermes"),
 ];
+
+/// Stage of the two-step "Add Provider" dialog: first pick a preset (or
+/// "Custom"), then fill in the (possibly preset-prefilled) form fields. Mirrors
+/// the desktop AddProviderDialog → ProviderForm flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddProviderStage {
+    SelectPreset,
+    Fields,
+}
 
 /// Dialog mode for input forms
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,6 +216,14 @@ pub struct TuiState {
     pub command_input: String,
     pub args_input: String,
     pub content_input: String,
+    // Add Provider dialog: preset selection + dynamic template fields.
+    pub add_stage: AddProviderStage,
+    /// Cursor in the preset-selection list (index 0 = "Custom", then presets).
+    pub preset_cursor: usize,
+    /// Chosen preset index into `presets_for_app(active_app)`; None = Custom.
+    pub chosen_preset: Option<usize>,
+    /// One input value per template variable of the chosen preset.
+    pub template_inputs: Vec<String>,
     // skills.sh discovery
     pub discover_results: Vec<olenro_core::skills_sh::SkillsShDiscoverableSkill>,
     pub discover_loaded: bool,
@@ -248,6 +266,10 @@ impl TuiState {
             command_input: String::new(),
             args_input: String::new(),
             content_input: String::new(),
+            add_stage: AddProviderStage::SelectPreset,
+            preset_cursor: 0,
+            chosen_preset: None,
+            template_inputs: Vec::new(),
             discover_results: Vec::new(),
             discover_loaded: false,
             discover_label: String::new(),
@@ -332,6 +354,63 @@ impl TuiState {
         self.args_input.clear();
         self.content_input.clear();
         self.category_index = 0;
+        self.add_stage = AddProviderStage::SelectPreset;
+        self.preset_cursor = 0;
+        self.chosen_preset = None;
+        self.template_inputs.clear();
+    }
+
+    /// Presets applicable to the app currently being managed.
+    pub fn add_provider_presets(&self) -> &'static [ProviderPreset] {
+        provider_presets::presets_for_app(self.active_app)
+    }
+
+    /// Number of selectable rows in the preset picker (row 0 = "Custom").
+    pub fn preset_row_count(&self) -> usize {
+        self.add_provider_presets().len() + 1
+    }
+
+    /// The chosen preset, if any (None = "Custom").
+    pub fn chosen_preset(&self) -> Option<&'static ProviderPreset> {
+        self.chosen_preset.map(|i| &self.add_provider_presets()[i])
+    }
+
+    /// Number of editable fields in the Fields stage of Add Provider.
+    /// Custom: name, endpoint, api key, category. Preset: name, endpoint,
+    /// api key, then one field per template variable.
+    pub fn add_provider_field_count(&self) -> usize {
+        match self.chosen_preset() {
+            None => 4,
+            Some(p) => 3 + p.template_fields().len(),
+        }
+    }
+
+    /// Apply the picker selection: load the chosen preset and prefill the form,
+    /// then advance to the Fields stage.
+    pub fn select_preset(&mut self) {
+        if self.preset_cursor == 0 {
+            // "Custom" — blank free-form form (same as the legacy add flow).
+            self.chosen_preset = None;
+            self.name_input.clear();
+            self.endpoint_input.clear();
+            self.api_key_input.clear();
+            self.template_inputs.clear();
+            self.category_index = 0;
+        } else {
+            let idx = self.preset_cursor - 1;
+            let preset = &self.add_provider_presets()[idx];
+            self.name_input = preset.name().to_string();
+            self.endpoint_input = preset.endpoint().unwrap_or_default();
+            self.api_key_input.clear();
+            self.template_inputs = preset
+                .template_fields()
+                .iter()
+                .map(|f| f.default_value.clone())
+                .collect();
+            self.chosen_preset = Some(idx);
+        }
+        self.add_stage = AddProviderStage::Fields;
+        self.input_field = 0;
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) {
@@ -340,11 +419,22 @@ impl TuiState {
 
     /// Push a char into the currently active input field
     pub fn push_input_char(&mut self, c: char) {
+        if self.dialog_mode == DialogMode::AddProvider {
+            match self.input_field {
+                0 => self.name_input.push(c),
+                1 => self.endpoint_input.push(c),
+                2 => self.api_key_input.push(c),
+                // For Custom, field 3 is the category selector (left/right only).
+                // For a preset, fields >= 3 are template variables.
+                n => {
+                    if let Some(buf) = self.template_inputs.get_mut(n - 3) {
+                        buf.push(c);
+                    }
+                }
+            }
+            return;
+        }
         match (&self.dialog_mode, self.input_field) {
-            (DialogMode::AddProvider, 0) => self.name_input.push(c),
-            (DialogMode::AddProvider, 1) => self.endpoint_input.push(c),
-            (DialogMode::AddProvider, 2) => self.api_key_input.push(c),
-            // field 3 is the category selector (handled via left/right)
             (DialogMode::EditProvider(_), 0) => self.name_input.push(c),
             (DialogMode::EditProvider(_), 1) => self.endpoint_input.push(c),
             (DialogMode::AddMcp, 0) => self.name_input.push(c),
@@ -373,16 +463,26 @@ impl TuiState {
 
     /// Remove the last char from the currently active input field
     pub fn pop_input_char(&mut self) {
+        if self.dialog_mode == DialogMode::AddProvider {
+            match self.input_field {
+                0 => {
+                    self.name_input.pop();
+                }
+                1 => {
+                    self.endpoint_input.pop();
+                }
+                2 => {
+                    self.api_key_input.pop();
+                }
+                n => {
+                    if let Some(buf) = self.template_inputs.get_mut(n - 3) {
+                        buf.pop();
+                    }
+                }
+            }
+            return;
+        }
         match (&self.dialog_mode, self.input_field) {
-            (DialogMode::AddProvider, 0) => {
-                self.name_input.pop();
-            }
-            (DialogMode::AddProvider, 1) => {
-                self.endpoint_input.pop();
-            }
-            (DialogMode::AddProvider, 2) => {
-                self.api_key_input.pop();
-            }
             (DialogMode::EditProvider(_), 0) => {
                 self.name_input.pop();
             }
@@ -455,7 +555,10 @@ impl TuiState {
 
     /// Cycle category selection (left=-1, right=+1) when on the category field
     pub fn cycle_category(&mut self, forward: bool) {
-        if self.dialog_mode == DialogMode::AddProvider && self.input_field == 3 {
+        if self.dialog_mode == DialogMode::AddProvider
+            && self.chosen_preset.is_none()
+            && self.input_field == 3
+        {
             let len = CATEGORIES.len();
             if forward {
                 self.category_index = (self.category_index + 1) % len;

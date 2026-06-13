@@ -166,6 +166,27 @@ impl ProviderService {
         Ok(provider)
     }
 
+    /// Create a provider from a built-in preset, substituting template
+    /// variables and injecting the API key into the app-appropriate slot.
+    /// `endpoint_override`, when set, replaces the preset's base URL (both the
+    /// top-level `base_url` and any `*_BASE_URL` env var) so the user can edit
+    /// the prefilled endpoint or pick a different candidate.
+    pub fn create_from_preset(
+        &self,
+        preset: &crate::provider_presets::ProviderPreset,
+        api_key: Option<&str>,
+        templates: &std::collections::HashMap<String, String>,
+        endpoint_override: Option<&str>,
+    ) -> AppResult<Provider> {
+        let sort_index = self.with_conn(|dao| dao.get_max_sort_index())? + 1;
+        let mut provider = preset.to_provider(api_key, templates, sort_index);
+        if let Some(ep) = endpoint_override.filter(|e| !e.is_empty()) {
+            apply_endpoint_override(&mut provider.settings_config, ep);
+        }
+        self.create_provider(provider.clone())?;
+        Ok(provider)
+    }
+
     /// Switch to a different provider for an app by writing its endpoint and
     /// credentials into the target app's live configuration file.
     ///
@@ -192,6 +213,25 @@ impl ProviderService {
                  Configure {:?} via the desktop app.",
                 other, other
             ))),
+        }
+    }
+}
+
+/// Replace the base URL inside a provider's `settings_config`: set the
+/// top-level `base_url` and overwrite any `*_BASE_URL` env var (Claude/Gemini
+/// keep the endpoint in the env block).
+fn apply_endpoint_override(settings: &mut serde_json::Value, endpoint: &str) {
+    if let Some(obj) = settings.as_object_mut() {
+        obj.insert(
+            "base_url".to_string(),
+            serde_json::Value::String(endpoint.to_string()),
+        );
+        if let Some(env) = obj.get_mut("env").and_then(|e| e.as_object_mut()) {
+            for key in env.keys().cloned().collect::<Vec<_>>() {
+                if key.ends_with("_BASE_URL") {
+                    env.insert(key, serde_json::Value::String(endpoint.to_string()));
+                }
+            }
         }
     }
 }
