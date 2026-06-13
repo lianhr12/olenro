@@ -208,11 +208,60 @@ impl ProviderService {
                 );
                 Ok(())
             }
-            other => Err(AppError::Provider(format!(
-                "Live switch for {:?} is not yet supported in the CLI (only Claude). \
-                 Configure {:?} via the desktop app.",
-                other, other
-            ))),
+            AppType::ClaudeDesktop => {
+                write_claude_desktop_live(&provider)?;
+                log::info!(
+                    "Switched Claude Desktop to provider: {} ({})",
+                    provider.name,
+                    provider_id
+                );
+                Ok(())
+            }
+            AppType::Gemini => {
+                write_gemini_live(&provider)?;
+                log::info!(
+                    "Switched Gemini to provider: {} ({})",
+                    provider.name,
+                    provider_id
+                );
+                Ok(())
+            }
+            AppType::Codex => {
+                write_codex_live(&provider)?;
+                log::info!(
+                    "Switched Codex to provider: {} ({})",
+                    provider.name,
+                    provider_id
+                );
+                Ok(())
+            }
+            AppType::OpenCode => {
+                write_opencode_live(&provider)?;
+                log::info!(
+                    "Switched OpenCode to provider: {} ({})",
+                    provider.name,
+                    provider_id
+                );
+                Ok(())
+            }
+            AppType::Hermes => {
+                write_hermes_live(&provider)?;
+                log::info!(
+                    "Switched Hermes to provider: {} ({})",
+                    provider.name,
+                    provider_id
+                );
+                Ok(())
+            }
+            AppType::OpenClaw => {
+                write_openclaw_live(&provider)?;
+                log::info!(
+                    "Switched OpenClaw to provider: {} ({})",
+                    provider.name,
+                    provider_id
+                );
+                Ok(())
+            }
         }
     }
 }
@@ -234,6 +283,240 @@ fn apply_endpoint_override(settings: &mut serde_json::Value, endpoint: &str) {
             }
         }
     }
+}
+
+/// Write a provider's endpoint + credentials into Claude Desktop's
+/// `~/.claude-desktop/config.json`, merging with any existing settings.
+fn write_claude_desktop_live(provider: &Provider) -> AppResult<()> {
+    use crate::app_config_writers::claude_config::{read_claude_desktop_config, write_claude_desktop_config, ClaudeDesktopConfig, ClaudeDesktopSettings};
+
+    let path = crate::app_config_writers::claude_config::get_claude_desktop_config_path();
+
+    // Load existing config or start with a default structure.
+    let mut config = if path.exists() {
+        read_claude_desktop_config()?.unwrap_or_else(|| ClaudeDesktopConfig {
+            version: 1,
+            settings: ClaudeDesktopSettings {
+                base_url: None,
+                api_key: None,
+                model: None,
+            },
+        })
+    } else {
+        ClaudeDesktopConfig {
+            version: 1,
+            settings: ClaudeDesktopSettings {
+                base_url: None,
+                api_key: None,
+                model: None,
+            },
+        }
+    };
+
+    // Extract endpoint and API key from provider config.
+    let base_url = provider
+        .settings_config
+        .get("baseUrl")
+        .and_then(|v| v.as_str())
+        .or_else(|| provider.settings_config.get("base_url").and_then(|v| v.as_str()))
+        .filter(|s| !s.is_empty());
+
+    let api_key = if let Some(env) = provider.settings_config.get("env").and_then(|e| e.as_object()) {
+        env.get("ANTHROPIC_AUTH_TOKEN")
+            .or_else(|| env.get("ANTHROPIC_API_KEY"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+    } else {
+        provider.settings_config.get("api_key").and_then(|v| v.as_str())
+    };
+
+    let model = provider.settings_config.get("model").and_then(|v| v.as_str());
+
+    // Update settings.
+    config.settings.base_url = base_url.map(str::to_string);
+    config.settings.api_key = api_key.map(str::to_string);
+    config.settings.model = model.map(str::to_string);
+
+    // Ensure parent directory exists.
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(AppError::Io)?;
+    }
+
+    write_claude_desktop_config(&config)?;
+    log::info!("Wrote Claude Desktop config to {:?}", path);
+    Ok(())
+}
+
+/// Write a provider's endpoint + credentials into Gemini's
+/// `~/.gemini/.env`, preserving existing env vars.
+fn write_gemini_live(provider: &Provider) -> AppResult<()> {
+    use crate::app_config_writers::gemini_config;
+
+    // Load existing env vars.
+    let mut env = gemini_config::read_gemini_env()?;
+
+    // Extract endpoint and API key from provider config.
+    let base_url = provider
+        .settings_config
+        .get("baseURL")
+        .and_then(|v| v.as_str())
+        .or_else(|| provider.settings_config.get("base_url").and_then(|v| v.as_str()))
+        .filter(|s| !s.is_empty());
+
+    if let Some(url) = base_url {
+        env.insert("GOOGLE_GEMINI_BASE_URL".to_string(), url.to_string());
+    }
+
+    let api_key = if let Some(e) = provider.settings_config.get("env").and_then(|e| e.as_object()) {
+        e.get("GOOGLE_GEMINI_API_KEY")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+    } else {
+        provider.settings_config.get("api_key").and_then(|v| v.as_str())
+    };
+
+    if let Some(key) = api_key {
+        env.insert("GOOGLE_GEMINI_API_KEY".to_string(), key.to_string());
+    }
+
+    gemini_config::write_gemini_env_atomic(&env)?;
+    log::info!("Wrote Gemini .env for provider: {}", provider.name);
+    Ok(())
+}
+
+/// Write a provider's endpoint + credentials into Codex's
+/// `~/.codex/config.toml` (as `experimental_bearer_token`).
+fn write_codex_live(provider: &Provider) -> AppResult<()> {
+    use crate::app_config_writers::codex_config;
+
+    // Get API key from provider config.
+    let api_key = if let Some(auth) = provider.settings_config.get("auth").and_then(|a| a.as_object()) {
+        auth.get("OPENAI_API_KEY")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+    } else {
+        provider.settings_config.get("api_key").and_then(|v| v.as_str())
+    };
+
+    let key = api_key.ok_or_else(|| {
+        AppError::Provider("Codex provider missing API key".to_string())
+    })?;
+
+    // Read existing config.toml or start with minimal content.
+    let path = codex_config::get_codex_config_path();
+    let existing_config = if path.exists() {
+        std::fs::read_to_string(&path).unwrap_or_else(|_| String::new())
+    } else {
+        String::new()
+    };
+
+    // Update or create experimental_bearer_token.
+    let updated = codex_config::set_codex_bearer_token(&existing_config, key)?;
+
+    codex_config::write_codex_config_text(&updated)?;
+    log::info!("Wrote Codex config.toml for provider: {}", provider.name);
+    Ok(())
+}
+
+/// Write a provider's endpoint + credentials into OpenCode's
+/// `~/.opencode/config.json`, storing it in the `provider` field.
+fn write_opencode_live(provider: &Provider) -> AppResult<()> {
+    use crate::app_config_writers::opencode_config;
+
+    // Build the provider config object from the stored provider.
+    let mut provider_config = serde_json::Map::new();
+
+    // Add base_url.
+    if let Some(base) = provider.settings_config.get("base_url").and_then(|v| v.as_str()) {
+        if !base.is_empty() {
+            provider_config.insert("base_url".to_string(), serde_json::json!(base));
+        }
+    }
+
+    // Add API key.
+    if let Some(key) = provider.settings_config.get("api_key").and_then(|v| v.as_str()) {
+        if !key.is_empty() {
+            provider_config.insert("api_key".to_string(), serde_json::json!(key));
+        }
+    }
+
+    // Add any env vars.
+    if let Some(env) = provider.settings_config.get("env").and_then(|e| e.as_object()) {
+        if !env.is_empty() {
+            provider_config.insert("env".to_string(), serde_json::json!(env));
+        }
+    }
+
+    // Load or create the full config.
+    let path = opencode_config::get_opencode_config_path();
+    let mut full_config = if path.exists() {
+        opencode_config::read_opencode_config()?.unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // Set the provider field.
+    if let Some(obj) = full_config.as_object_mut() {
+        obj.insert("provider".to_string(), serde_json::Value::Object(provider_config));
+    }
+
+    opencode_config::write_opencode_config(&full_config)?;
+    log::info!("Wrote OpenCode config.json for provider: {}", provider.name);
+    Ok(())
+}
+
+/// Write a provider's endpoint + credentials into Hermes's
+/// `~/.hermes/config.yaml`, updating the `model.provider` and related fields.
+fn write_hermes_live(provider: &Provider) -> AppResult<()> {
+    use crate::app_config_writers::hermes_config;
+
+    let base_url = provider
+        .settings_config
+        .get("base_url")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    let api_key = provider.settings_config.get("api_key").and_then(|v| v.as_str());
+
+    hermes_config::write_provider_for_switch(
+        &provider.name,
+        base_url,
+        api_key,
+        &provider.settings_config,
+    )?;
+
+    log::info!("Wrote Hermes config.yaml for provider: {}", provider.name);
+    Ok(())
+}
+
+/// Write a provider's config into OpenClaw's `~/.openclaw/openclaw.json`,
+/// storing it under `models.providers.<id>`.
+fn write_openclaw_live(provider: &Provider) -> AppResult<()> {
+    use crate::app_config_writers::openclaw_config;
+
+    // Use the provider's name (slugified) as the OpenClaw provider id.
+    let provider_id: String = provider
+        .name
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    let provider_id = provider_id.trim_matches('-').to_string();
+    let provider_id = if provider_id.is_empty() {
+        "custom".to_string()
+    } else {
+        provider_id
+    };
+
+    // The OpenClaw provider config lives in settings_config directly (the
+    // preset snapshot stores the OpenClawProviderConfig shape there).
+    openclaw_config::set_provider(&provider_id, provider.settings_config.clone())?;
+    log::info!(
+        "Wrote OpenClaw config.json for provider: {} (id={})",
+        provider.name,
+        provider_id
+    );
+    Ok(())
 }
 
 /// Write a provider's endpoint + credentials into Claude Code's
@@ -402,11 +685,117 @@ mod tests {
         assert_eq!(v["permissions"]["allow"][0].as_str(), Some("Bash"));
         assert_eq!(v["env"]["FOO"].as_str(), Some("bar"));
 
-        // Non-Claude apps return an explanatory error (not a silent no-op).
-        let err = svc
-            .switch_provider(&provider.id, AppType::Codex)
-            .unwrap_err();
-        assert!(format!("{}", err).contains("not yet supported"));
+        std::env::remove_var("OLENRO_TEST_HOME");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Each non-Claude app now writes its own live config file on switch.
+    #[test]
+    #[serial]
+    fn switch_writes_each_app_live_config() {
+        let home = std::env::temp_dir().join(format!("olenro-switch-apps-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        std::env::set_var("OLENRO_TEST_HOME", &home);
+
+        let svc = ProviderService::new(home.join("olenro.db"));
+
+        // Gemini: writes ~/.gemini/.env with base url + key.
+        let gemini = svc
+            .add_provider(
+                "My Gemini",
+                "https://gemini.example.com",
+                ProviderCategory::Custom,
+                Some("g-key"),
+            )
+            .unwrap();
+        svc.switch_provider(&gemini.id, AppType::Gemini).unwrap();
+        let env = std::fs::read_to_string(home.join(".gemini").join(".env")).unwrap();
+        assert!(env.contains("GOOGLE_GEMINI_BASE_URL=https://gemini.example.com"));
+        assert!(env.contains("GOOGLE_GEMINI_API_KEY=g-key"));
+
+        // Codex: writes ~/.codex/config.toml with the bearer token.
+        let codex = svc
+            .add_provider(
+                "My Codex",
+                "https://codex.example.com",
+                ProviderCategory::Custom,
+                Some("c-key"),
+            )
+            .unwrap();
+        svc.switch_provider(&codex.id, AppType::Codex).unwrap();
+        let toml = std::fs::read_to_string(home.join(".codex").join("config.toml")).unwrap();
+        assert!(toml.contains("experimental_bearer_token"));
+        assert!(toml.contains("c-key"));
+
+        // OpenCode: writes ~/.opencode/config.json under `provider`.
+        let oc = svc
+            .add_provider(
+                "My OpenCode",
+                "https://oc.example.com",
+                ProviderCategory::Custom,
+                Some("o-key"),
+            )
+            .unwrap();
+        svc.switch_provider(&oc.id, AppType::OpenCode).unwrap();
+        let json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(home.join(".opencode").join("config.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(json["provider"]["api_key"].as_str(), Some("o-key"));
+        assert_eq!(
+            json["provider"]["base_url"].as_str(),
+            Some("https://oc.example.com")
+        );
+
+        // Hermes: writes ~/.hermes/config.yaml under model.provider.
+        let hermes = svc
+            .add_provider(
+                "My Hermes",
+                "https://hermes.example.com",
+                ProviderCategory::Custom,
+                Some("h-key"),
+            )
+            .unwrap();
+        svc.switch_provider(&hermes.id, AppType::Hermes).unwrap();
+        let yaml = std::fs::read_to_string(home.join(".hermes").join("config.yaml")).unwrap();
+        assert!(yaml.contains("provider: My Hermes"));
+        assert!(yaml.contains("h-key"));
+
+        // Claude Desktop: writes ~/.claude-desktop/config.json.
+        let cd = svc
+            .add_provider(
+                "My CD",
+                "https://cd.example.com",
+                ProviderCategory::Custom,
+                Some("cd-key"),
+            )
+            .unwrap();
+        svc.switch_provider(&cd.id, AppType::ClaudeDesktop).unwrap();
+        let cd_json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(home.join(".claude-desktop").join("config.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            cd_json["settings"]["base_url"].as_str(),
+            Some("https://cd.example.com")
+        );
+
+        // OpenClaw: writes ~/.openclaw/config.json under models.providers.
+        let openclaw = svc
+            .add_provider(
+                "My OpenClaw",
+                "https://openclaw.example.com",
+                ProviderCategory::Custom,
+                Some("oc-key"),
+            )
+            .unwrap();
+        svc.switch_provider(&openclaw.id, AppType::OpenClaw).unwrap();
+        // OpenClaw config is JSON5 (unquoted keys) — parse leniently.
+        let oc_text =
+            std::fs::read_to_string(home.join(".openclaw").join("openclaw.json")).unwrap();
+        let oc_json: serde_json::Value = json5::from_str(&oc_text).unwrap();
+        assert!(oc_json["models"]["providers"]["my-openclaw"].is_object());
 
         std::env::remove_var("OLENRO_TEST_HOME");
         let _ = std::fs::remove_dir_all(&home);

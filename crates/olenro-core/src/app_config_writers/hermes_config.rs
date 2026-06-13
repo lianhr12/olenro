@@ -1,11 +1,11 @@
-//! Hermes Agent 配置文件读写模块（memory 子集）
+//! Hermes Agent 配置文件读写模块（memory + provider 子集）
 //!
 //! 处理 `~/.hermes/config.yaml`（YAML）以及 `~/.hermes/memories/` 下的
-//! `MEMORY.md` / `USER.md` 记忆文件。
+//! `MEMORY.md` / `USER.md` 记忆文件，以及供应商切换时的配置写入。
 //!
-//! 本模块由桌面端 `src-tauri/src/hermes_config.rs` 移植而来，目前仅覆盖
+//! 本模块由桌面端 `src-tauri/src/hermes_config.rs` 移植而来，目前覆盖
 //! Hermes Memory 视图所需部分（配置读取 + YAML 段落保格式写入 + 记忆文件读写
-//! + 记忆开关/预算）。provider/model/mcp 等写入逻辑暂未移植。
+//! + 记忆开关/预算）以及基础的供应商切换写入逻辑。
 //!
 //! 适配：错误类型用 `olenro_core::error::AppError`（`io`/`JsonSerialize` 构造器
 //! 走 `#[from]` 的 `?`）；去掉桌面端 settings 覆盖目录依赖（CLI 固定 `~/.hermes`）。
@@ -366,6 +366,76 @@ pub fn read_memory_limits() -> Result<HermesMemoryLimits, AppError> {
     }
 
     Ok(out)
+}
+
+// ============================================================================
+// Provider Switch Support
+// ============================================================================
+
+/// Convenience to build a YAML string key.
+fn yaml_key(key: &str) -> serde_yaml::Value {
+    serde_yaml::Value::String(key.to_string())
+}
+
+/// Write provider settings to Hermes config.yaml for provider switching.
+/// Updates the `provider` field and related env vars in the `model` section.
+pub fn write_provider_for_switch(
+    provider_name: &str,
+    base_url: Option<&str>,
+    api_key: Option<&str>,
+    provider_config: &serde_json::Value,
+) -> Result<HermesWriteOutcome, AppError> {
+    let _guard = hermes_write_lock().lock().unwrap();
+
+    // Read existing config (defaults to an empty mapping) and grab its map.
+    let mut config = read_hermes_config()?;
+    let root = config.as_mapping_mut().ok_or_else(|| {
+        AppError::Config("Hermes config is not a valid YAML mapping".to_string())
+    })?;
+
+    // Take (or create) the `model` mapping.
+    let mut model = root
+        .get(yaml_key("model"))
+        .and_then(|v| v.as_mapping())
+        .cloned()
+        .unwrap_or_default();
+
+    model.insert(yaml_key("provider"), yaml_key(provider_name));
+
+    if let Some(url) = base_url.filter(|s| !s.is_empty()) {
+        model.insert(yaml_key("base_url"), yaml_key(url));
+    }
+
+    // Build the env block from the provider config plus the api key.
+    let mut env = serde_yaml::Mapping::new();
+    if let Some(obj) = provider_config.get("env").and_then(|e| e.as_object()) {
+        for (k, v) in obj {
+            if let Some(v_str) = v.as_str() {
+                env.insert(yaml_key(k), yaml_key(v_str));
+            }
+        }
+    }
+    if let Some(key) = api_key.filter(|s| !s.is_empty()) {
+        env.insert(yaml_key("api_key"), yaml_key(key));
+    }
+    if !env.is_empty() {
+        model.insert(yaml_key("env"), serde_yaml::Value::Mapping(env));
+    }
+
+    root.insert(yaml_key("model"), serde_yaml::Value::Mapping(model));
+
+    // Serialize and write atomically.
+    let yaml_content = serde_yaml::to_string(&config)
+        .map_err(|e| AppError::Config(format!("Failed to serialize Hermes config: {}", e)))?;
+
+    let config_path = get_hermes_config_path();
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent).map_err(AppError::Io)?;
+    }
+    atomic_write(&config_path, yaml_content.as_bytes())?;
+
+    log::info!("Wrote Hermes config.yaml for provider: {}", provider_name);
+    Ok(HermesWriteOutcome { backup_path: None })
 }
 
 #[cfg(test)]
