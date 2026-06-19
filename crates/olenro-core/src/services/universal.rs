@@ -145,7 +145,12 @@ mod tests {
         assert!(svc.list().unwrap().is_empty());
 
         let mut p = svc
-            .add("OpenRouter", "custom", "https://openrouter.ai/api/v1", "sk-1")
+            .add(
+                "OpenRouter",
+                "custom",
+                "https://openrouter.ai/api/v1",
+                "sk-1",
+            )
             .unwrap();
         assert_eq!(svc.list().unwrap().len(), 1);
 

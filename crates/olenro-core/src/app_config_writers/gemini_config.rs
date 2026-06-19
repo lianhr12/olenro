@@ -8,9 +8,7 @@ use std::path::PathBuf;
 
 /// Get Gemini .env path
 pub fn get_gemini_env_path() -> PathBuf {
-    crate::config::get_home_dir()
-        .join(".gemini")
-        .join(".env")
+    crate::config::get_home_dir().join(".gemini").join(".env")
 }
 
 /// Get Gemini config path (for backward compatibility)
@@ -32,7 +30,9 @@ pub fn parse_env_file(content: &str) -> HashMap<String, String> {
             }
             let mut parts = line.splitn(2, '=');
             match (parts.next(), parts.next()) {
-                (Some(key), Some(value)) => Some((key.trim().to_string(), value.trim().to_string())),
+                (Some(key), Some(value)) => {
+                    Some((key.trim().to_string(), value.trim().to_string()))
+                }
                 _ => None,
             }
         })

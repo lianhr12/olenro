@@ -289,7 +289,10 @@ impl TuiState {
 
     pub fn next_tab(&mut self) {
         let tabs = self.visible_tabs();
-        let pos = tabs.iter().position(|t| *t == self.current_tab).unwrap_or(0);
+        let pos = tabs
+            .iter()
+            .position(|t| *t == self.current_tab)
+            .unwrap_or(0);
         self.current_tab = tabs[(pos + 1) % tabs.len()];
         self.selected_index = 0;
         self.close_dialog();
@@ -297,7 +300,10 @@ impl TuiState {
 
     pub fn prev_tab(&mut self) {
         let tabs = self.visible_tabs();
-        let pos = tabs.iter().position(|t| *t == self.current_tab).unwrap_or(0);
+        let pos = tabs
+            .iter()
+            .position(|t| *t == self.current_tab)
+            .unwrap_or(0);
         self.current_tab = tabs[(pos + tabs.len() - 1) % tabs.len()];
         self.selected_index = 0;
         self.close_dialog();
@@ -319,7 +325,11 @@ impl TuiState {
         // If the current tab is not applicable to the new app, fall back to the
         // first visible tab (Providers is always visible).
         if !self.current_tab.visible_for(self.active_app) {
-            self.current_tab = self.visible_tabs().first().copied().unwrap_or(Tab::Providers);
+            self.current_tab = self
+                .visible_tabs()
+                .first()
+                .copied()
+                .unwrap_or(Tab::Providers);
         }
         self.selected_index = 0;
         self.close_dialog();

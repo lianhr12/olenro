@@ -75,5 +75,44 @@ pub enum AppError {
     UnknownAppType(String),
 }
 
+impl From<reqwest::Error> for AppError {
+    fn from(e: reqwest::Error) -> Self {
+        AppError::Network(e.to_string())
+    }
+}
+
+impl From<zip::result::ZipError> for AppError {
+    fn from(e: zip::result::ZipError) -> Self {
+        AppError::Skill(format!("zip error: {e}"))
+    }
+}
+
 /// Result type alias for Olenro operations
 pub type AppResult<T> = Result<T, AppError>;
+
+/// 构造结构化的技能错误负载（JSON 字符串）。
+///
+/// 由桌面端 `src-tauri/src/error.rs` 移植。返回形如
+/// `{"code":"...","context":{...},"suggestion":"..."}` 的 JSON 串，
+/// 便于 TUI/CLI 层做 i18n 与修复建议引导。序列化失败时回退为
+/// `ERROR:<code>`。
+pub fn format_skill_error(
+    code: &str,
+    context: &[(&str, &str)],
+    suggestion: Option<&str>,
+) -> String {
+    use serde_json::json;
+
+    let mut ctx_map = serde_json::Map::new();
+    for (key, value) in context {
+        ctx_map.insert(key.to_string(), json!(value));
+    }
+
+    let error_obj = json!({
+        "code": code,
+        "context": ctx_map,
+        "suggestion": suggestion,
+    });
+
+    serde_json::to_string(&error_obj).unwrap_or_else(|_| format!("ERROR:{code}"))
+}

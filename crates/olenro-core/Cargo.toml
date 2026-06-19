@@ -72,7 +72,13 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 # Compression
 flate2 = "1"
 brotli = "7"
+zip = "2.2"
+
+# Hashing (skill content hash for update detection)
+sha2 = "0.10"
+
+# Temp dirs (skill repo download/extract)
+tempfile = "3"
 
 [dev-dependencies]
-tempfile = "3"
 serial_test = "3"

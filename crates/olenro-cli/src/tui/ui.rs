@@ -54,7 +54,9 @@ fn render_title(f: &mut Frame, area: Rect, state: &TuiState) {
             // Track the real crate version so the title never drifts from
             // `olenro version`. ("v2.0.0" was a codename, not the package version.)
             format!("Olenro TUI  v{}   ", env!("CARGO_PKG_VERSION")),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled("App: ", Style::default().fg(Color::Gray)),
         Span::styled(
@@ -203,7 +205,9 @@ fn render_dashboard(f: &mut Frame, area: Rect, state: &mut TuiState) {
         Line::from(""),
         Line::from(Span::styled(
             "  Resources",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(format!("    Providers:  {}", providers.len())),
         Line::from(format!(
@@ -220,7 +224,9 @@ fn render_dashboard(f: &mut Frame, area: Rect, state: &mut TuiState) {
         Line::from(""),
         Line::from(Span::styled(
             "  Proxy",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(vec![
             Span::raw("    Status:     "),
@@ -239,7 +245,9 @@ fn render_dashboard(f: &mut Frame, area: Rect, state: &mut TuiState) {
         Line::from(""),
         Line::from(Span::styled(
             "  Usage (last 30 days)",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(format!(
             "    Requests:   {}    Cost: {}",
@@ -284,7 +292,10 @@ fn render_providers(f: &mut Frame, area: Rect, state: &mut TuiState) {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let fo = if p.in_failover_queue { "⚡" } else { " " };
-            let content = format!("{}{}{} [{:?}]  {}", prefix, fo, p.name, p.category, endpoint);
+            let content = format!(
+                "{}{}{} [{:?}]  {}",
+                prefix, fo, p.name, p.category, endpoint
+            );
             ListItem::new(content).style(row_style(selected))
         })
         .collect();
@@ -395,7 +406,19 @@ fn render_skills(f: &mut Frame, area: Rect, state: &mut TuiState) {
         .map(|(i, s)| {
             let selected = i == state.selected_index;
             let prefix = if selected { "> " } else { "  " };
-            let content = format!("{}{} v{}  ({})", prefix, s.name, s.version, s.path);
+            let apps = s
+                .apps
+                .enabled_apps()
+                .iter()
+                .map(|a| a.as_str().to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            let apps = if apps.is_empty() {
+                "-".to_string()
+            } else {
+                apps
+            };
+            let content = format!("{}{}  [{}]  ({})", prefix, s.name, s.directory, apps);
             ListItem::new(content).style(row_style(selected))
         })
         .collect();
@@ -652,7 +675,11 @@ fn usage_with_data<'a>(
             .into_iter()
             .rev()
             .collect();
-        let day_max = recent.iter().map(|(_, (req, _))| *req as usize).max().unwrap_or(0);
+        let day_max = recent
+            .iter()
+            .map(|(_, (req, _))| *req as usize)
+            .max()
+            .unwrap_or(0);
 
         text.push(Line::from(""));
         text.push(Line::from("  Daily Trend (requests / cost)"));
@@ -804,11 +831,16 @@ fn render_proxy(f: &mut Frame, area: Rect, state: &mut TuiState) {
     ];
 
     // Failover queue (providers tried in order when the active one fails).
-    let queue = state.provider_service.list_failover_queue().unwrap_or_default();
+    let queue = state
+        .provider_service
+        .list_failover_queue()
+        .unwrap_or_default();
     text.push(Line::from(""));
     text.push(Line::from(Span::styled(
         format!("  Failover Queue ({})", queue.len()),
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     )));
     if queue.is_empty() {
         text.push(Line::from(Span::styled(
@@ -917,7 +949,9 @@ fn render_workspace(f: &mut Frame, area: Rect, state: &mut TuiState) {
     }
     let info = Paragraph::new(text)
         .style(Style::default().bg(BG).fg(Color::White))
-        .block(panel(" Workspace Files (~/.openclaw/workspace) ".to_string()));
+        .block(panel(
+            " Workspace Files (~/.openclaw/workspace) ".to_string(),
+        ));
     f.render_widget(info, chunks[0]);
 
     // --- Daily memory files (selectable) ---
@@ -1013,7 +1047,10 @@ fn render_openclaw_tools(f: &mut Frame, area: Rect, _state: &mut TuiState) {
         Line::from(vec![
             Span::raw("  Profile:  "),
             Span::styled(
-                tools.profile.clone().unwrap_or_else(|| "(none)".to_string()),
+                tools
+                    .profile
+                    .clone()
+                    .unwrap_or_else(|| "(none)".to_string()),
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -1026,7 +1063,9 @@ fn render_openclaw_tools(f: &mut Frame, area: Rect, _state: &mut TuiState) {
         Line::from(""),
         Line::from(Span::styled(
             format!("  Allow ({})", tools.allow.len()),
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
         )),
     ];
     if tools.allow.is_empty() {
@@ -1070,7 +1109,9 @@ fn render_openclaw_agents(f: &mut Frame, area: Rect, _state: &mut TuiState) {
         Line::from(""),
         Line::from(Span::styled(
             "  Default Model",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )),
     ];
     match &model {
@@ -1095,10 +1136,7 @@ fn render_openclaw_agents(f: &mut Frame, area: Rect, _state: &mut TuiState) {
             }
         }
         None => text.push(Line::from(vec![
-            Span::styled(
-                "    Not set",
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled("    Not set", Style::default().fg(Color::DarkGray)),
             Span::styled("   [e] set primary", Style::default().fg(Color::DarkGray)),
         ])),
     }
@@ -1106,7 +1144,9 @@ fn render_openclaw_agents(f: &mut Frame, area: Rect, _state: &mut TuiState) {
     text.push(Line::from(""));
     text.push(Line::from(Span::styled(
         format!("  Model Catalog ({})", catalog.len()),
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     )));
     if catalog.is_empty() {
         text.push(Line::from(Span::styled(
@@ -1142,8 +1182,20 @@ fn render_hermes_memory(f: &mut Frame, area: Rect, state: &mut TuiState) {
     let user = hc::read_memory(hc::MemoryKind::User).unwrap_or_default();
 
     let rows = [
-        ("MEMORY.md", mem.chars().count(), limits.memory, limits.memory_enabled, &mem),
-        ("USER.md", user.chars().count(), limits.user, limits.user_enabled, &user),
+        (
+            "MEMORY.md",
+            mem.chars().count(),
+            limits.memory,
+            limits.memory_enabled,
+            &mem,
+        ),
+        (
+            "USER.md",
+            user.chars().count(),
+            limits.user,
+            limits.user_enabled,
+            &user,
+        ),
     ];
 
     let mut text: Vec<Line> = vec![Line::from("")];
@@ -1151,18 +1203,21 @@ fn render_hermes_memory(f: &mut Frame, area: Rect, state: &mut TuiState) {
         let selected = i == state.selected_index;
         let prefix = if selected { "> " } else { "  " };
         let toggle = if *enabled { "[ON] " } else { "[off]" };
-        let toggle_color = if *enabled { Color::Green } else { Color::DarkGray };
+        let toggle_color = if *enabled {
+            Color::Green
+        } else {
+            Color::DarkGray
+        };
         let over = used > budget;
         let budget_color = if over { Color::Red } else { Color::White };
         text.push(Line::from(vec![
             Span::styled(
                 format!("{}{} ", prefix, toggle),
-                Style::default().fg(toggle_color).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(toggle_color)
+                    .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!("{:<10} ", name),
-                row_style(selected),
-            ),
+            Span::styled(format!("{:<10} ", name), row_style(selected)),
             Span::styled(
                 format!("{} / {} chars", used, budget),
                 Style::default().fg(budget_color),
@@ -1213,11 +1268,17 @@ fn render_settings(f: &mut Frame, area: Rect, state: &mut TuiState) {
     let git = olenro_core::git_sync::status();
     text.push(Line::from(Span::styled(
         "  Git Sync",
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     )));
     if git.is_repo {
         let dirty = if git.dirty { "dirty" } else { "clean" };
-        let dirty_color = if git.dirty { Color::Yellow } else { Color::Green };
+        let dirty_color = if git.dirty {
+            Color::Yellow
+        } else {
+            Color::Green
+        };
         text.push(Line::from(vec![
             Span::raw(format!(
                 "    Branch: {}   Remote: {}   ",
@@ -1238,7 +1299,9 @@ fn render_settings(f: &mut Frame, area: Rect, state: &mut TuiState) {
     text.push(Line::from(""));
     text.push(Line::from(Span::styled(
         format!("  Backups ({})", backups.len()),
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     )));
     for b in backups.iter().take(3) {
         text.push(Line::from(format!(

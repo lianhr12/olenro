@@ -191,14 +191,7 @@ mod tests {
 
     #[test]
     fn map_skill_filters_non_github_sources() {
-        assert!(map_skill(
-            "owner/repo",
-            "k".into(),
-            "dir".into(),
-            "Name".into(),
-            5
-        )
-        .is_some());
+        assert!(map_skill("owner/repo", "k".into(), "dir".into(), "Name".into(), 5).is_some());
         // non-github (host-like) sources are dropped
         assert!(map_skill(
             "skills.volces.com/x",

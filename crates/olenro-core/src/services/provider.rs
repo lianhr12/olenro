@@ -308,7 +308,10 @@ fn apply_endpoint_override(settings: &mut serde_json::Value, endpoint: &str) {
 /// Write a provider's endpoint + credentials into Claude Desktop's
 /// `~/.claude-desktop/config.json`, merging with any existing settings.
 fn write_claude_desktop_live(provider: &Provider) -> AppResult<()> {
-    use crate::app_config_writers::claude_config::{read_claude_desktop_config, write_claude_desktop_config, ClaudeDesktopConfig, ClaudeDesktopSettings};
+    use crate::app_config_writers::claude_config::{
+        read_claude_desktop_config, write_claude_desktop_config, ClaudeDesktopConfig,
+        ClaudeDesktopSettings,
+    };
 
     let path = crate::app_config_writers::claude_config::get_claude_desktop_config_path();
 
@@ -338,19 +341,34 @@ fn write_claude_desktop_live(provider: &Provider) -> AppResult<()> {
         .settings_config
         .get("baseUrl")
         .and_then(|v| v.as_str())
-        .or_else(|| provider.settings_config.get("base_url").and_then(|v| v.as_str()))
+        .or_else(|| {
+            provider
+                .settings_config
+                .get("base_url")
+                .and_then(|v| v.as_str())
+        })
         .filter(|s| !s.is_empty());
 
-    let api_key = if let Some(env) = provider.settings_config.get("env").and_then(|e| e.as_object()) {
+    let api_key = if let Some(env) = provider
+        .settings_config
+        .get("env")
+        .and_then(|e| e.as_object())
+    {
         env.get("ANTHROPIC_AUTH_TOKEN")
             .or_else(|| env.get("ANTHROPIC_API_KEY"))
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
     } else {
-        provider.settings_config.get("api_key").and_then(|v| v.as_str())
+        provider
+            .settings_config
+            .get("api_key")
+            .and_then(|v| v.as_str())
     };
 
-    let model = provider.settings_config.get("model").and_then(|v| v.as_str());
+    let model = provider
+        .settings_config
+        .get("model")
+        .and_then(|v| v.as_str());
 
     // Update settings.
     config.settings.base_url = base_url.map(str::to_string);
@@ -380,19 +398,31 @@ fn write_gemini_live(provider: &Provider) -> AppResult<()> {
         .settings_config
         .get("baseURL")
         .and_then(|v| v.as_str())
-        .or_else(|| provider.settings_config.get("base_url").and_then(|v| v.as_str()))
+        .or_else(|| {
+            provider
+                .settings_config
+                .get("base_url")
+                .and_then(|v| v.as_str())
+        })
         .filter(|s| !s.is_empty());
 
     if let Some(url) = base_url {
         env.insert("GOOGLE_GEMINI_BASE_URL".to_string(), url.to_string());
     }
 
-    let api_key = if let Some(e) = provider.settings_config.get("env").and_then(|e| e.as_object()) {
+    let api_key = if let Some(e) = provider
+        .settings_config
+        .get("env")
+        .and_then(|e| e.as_object())
+    {
         e.get("GOOGLE_GEMINI_API_KEY")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
     } else {
-        provider.settings_config.get("api_key").and_then(|v| v.as_str())
+        provider
+            .settings_config
+            .get("api_key")
+            .and_then(|v| v.as_str())
     };
 
     if let Some(key) = api_key {
@@ -410,17 +440,23 @@ fn write_codex_live(provider: &Provider) -> AppResult<()> {
     use crate::app_config_writers::codex_config;
 
     // Get API key from provider config.
-    let api_key = if let Some(auth) = provider.settings_config.get("auth").and_then(|a| a.as_object()) {
+    let api_key = if let Some(auth) = provider
+        .settings_config
+        .get("auth")
+        .and_then(|a| a.as_object())
+    {
         auth.get("OPENAI_API_KEY")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
     } else {
-        provider.settings_config.get("api_key").and_then(|v| v.as_str())
+        provider
+            .settings_config
+            .get("api_key")
+            .and_then(|v| v.as_str())
     };
 
-    let key = api_key.ok_or_else(|| {
-        AppError::Provider("Codex provider missing API key".to_string())
-    })?;
+    let key =
+        api_key.ok_or_else(|| AppError::Provider("Codex provider missing API key".to_string()))?;
 
     // Read existing config.toml or start with minimal content.
     let path = codex_config::get_codex_config_path();
@@ -447,21 +483,33 @@ fn write_opencode_live(provider: &Provider) -> AppResult<()> {
     let mut provider_config = serde_json::Map::new();
 
     // Add base_url.
-    if let Some(base) = provider.settings_config.get("base_url").and_then(|v| v.as_str()) {
+    if let Some(base) = provider
+        .settings_config
+        .get("base_url")
+        .and_then(|v| v.as_str())
+    {
         if !base.is_empty() {
             provider_config.insert("base_url".to_string(), serde_json::json!(base));
         }
     }
 
     // Add API key.
-    if let Some(key) = provider.settings_config.get("api_key").and_then(|v| v.as_str()) {
+    if let Some(key) = provider
+        .settings_config
+        .get("api_key")
+        .and_then(|v| v.as_str())
+    {
         if !key.is_empty() {
             provider_config.insert("api_key".to_string(), serde_json::json!(key));
         }
     }
 
     // Add any env vars.
-    if let Some(env) = provider.settings_config.get("env").and_then(|e| e.as_object()) {
+    if let Some(env) = provider
+        .settings_config
+        .get("env")
+        .and_then(|e| e.as_object())
+    {
         if !env.is_empty() {
             provider_config.insert("env".to_string(), serde_json::json!(env));
         }
@@ -477,7 +525,10 @@ fn write_opencode_live(provider: &Provider) -> AppResult<()> {
 
     // Set the provider field.
     if let Some(obj) = full_config.as_object_mut() {
-        obj.insert("provider".to_string(), serde_json::Value::Object(provider_config));
+        obj.insert(
+            "provider".to_string(),
+            serde_json::Value::Object(provider_config),
+        );
     }
 
     opencode_config::write_opencode_config(&full_config)?;
@@ -496,7 +547,10 @@ fn write_hermes_live(provider: &Provider) -> AppResult<()> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
 
-    let api_key = provider.settings_config.get("api_key").and_then(|v| v.as_str());
+    let api_key = provider
+        .settings_config
+        .get("api_key")
+        .and_then(|v| v.as_str());
 
     hermes_config::write_provider_for_switch(
         &provider.name,
@@ -910,7 +964,8 @@ mod tests {
                 Some("oc-key"),
             )
             .unwrap();
-        svc.switch_provider(&openclaw.id, AppType::OpenClaw).unwrap();
+        svc.switch_provider(&openclaw.id, AppType::OpenClaw)
+            .unwrap();
         // OpenClaw config is JSON5 (unquoted keys) — parse leniently.
         let oc_text =
             std::fs::read_to_string(home.join(".openclaw").join("openclaw.json")).unwrap();

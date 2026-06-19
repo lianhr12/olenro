@@ -93,7 +93,9 @@ fn handle_list_key(state: &mut TuiState, code: KeyCode) -> bool {
         KeyCode::Char('x') if state.current_tab == Tab::Proxy => proxy_stop(state),
         KeyCode::Char('t') if state.current_tab == Tab::Proxy => proxy_toggle_takeover(state),
         // Toggle the selected provider in/out of the failover queue.
-        KeyCode::Char('f') if state.current_tab == Tab::Providers => provider_toggle_failover(state),
+        KeyCode::Char('f') if state.current_tab == Tab::Providers => {
+            provider_toggle_failover(state)
+        }
         // Sync MCP servers to every app's config (MCP tab).
         KeyCode::Char('s') if state.current_tab == Tab::Mcp => mcp_sync_all(state),
         // Sync installed skills into the current app's skills directory.
@@ -175,7 +177,10 @@ fn proxy_toggle_takeover(state: &mut TuiState) {
                     state.proxy_service.proxy_url()
                 ));
             } else {
-                state.set_status(format!("{} takeover OFF → restored previous endpoint", name));
+                state.set_status(format!(
+                    "{} takeover OFF → restored previous endpoint",
+                    name
+                ));
             }
         }
         Err(e) => state.set_status(format!("Takeover failed: {}", e)),
@@ -185,7 +190,10 @@ fn proxy_toggle_takeover(state: &mut TuiState) {
 /// Surface the command to resume the selected Claude session.
 fn session_resume(state: &mut TuiState) {
     let app = state.active_app;
-    let sessions = state.session_manager.list_sessions(&app).unwrap_or_default();
+    let sessions = state
+        .session_manager
+        .list_sessions(&app)
+        .unwrap_or_default();
     if let Some(s) = sessions.get(state.selected_index) {
         let dir = s.cwd.clone().unwrap_or_else(|| ".".to_string());
         state.set_status(format!(
@@ -397,11 +405,7 @@ fn current_list_len(state: &TuiState) -> usize {
             .map(|v| v.len())
             .unwrap_or(0),
         Tab::HermesMemory => 2, // MEMORY.md + USER.md
-        Tab::Universal => state
-            .universal_service
-            .list()
-            .map(|v| v.len())
-            .unwrap_or(0),
+        Tab::Universal => state.universal_service.list().map(|v| v.len()).unwrap_or(0),
         _ => 0,
     }
 }
@@ -466,7 +470,8 @@ fn handle_enter_list(state: &mut TuiState) {
         Tab::Skills => {
             let skills = state.skill_service.list_skills().unwrap_or_default();
             if let Some(s) = skills.get(state.selected_index) {
-                match state.skill_service.update(&s.id) {
+                let rt = state.runtime.clone();
+                match rt.block_on(state.skill_service.update_skill(&s.id)) {
                     Ok(_) => state.set_status(format!("Updated skill: {}", s.name)),
                     Err(e) => state.set_status(format!("Update failed: {}", e)),
                 }
@@ -490,7 +495,10 @@ fn handle_enter_list(state: &mut TuiState) {
                 olenro_core::openclaw_workspace::list_daily_memory_files().unwrap_or_default();
             if let Some(f) = files.get(state.selected_index) {
                 let preview = f.preview.replace('\n', " ");
-                state.set_status(format!("{} · {} bytes · {}", f.filename, f.size_bytes, preview));
+                state.set_status(format!(
+                    "{} · {} bytes · {}",
+                    f.filename, f.size_bytes, preview
+                ));
             }
         }
         Tab::HermesMemory => {
@@ -650,9 +658,15 @@ fn discover_install(state: &mut TuiState) {
         return;
     };
     let slug = skill.repo_slug();
+    let app = state.active_app;
     state.set_status(format!("Installing {}…", slug));
-    match state.skill_service.install_from_github(&slug) {
-        Ok(s) => state.set_status(format!("Installed {} from {}", s.name, slug)),
+    let rt = state.runtime.clone();
+    match rt.block_on(state.skill_service.install_from_github(&slug, &app)) {
+        Ok(installed) => state.set_status(format!(
+            "Installed {} skill(s) from {}",
+            installed.len(),
+            slug
+        )),
         Err(e) => state.set_status(format!("Install failed ({}): {}", slug, e)),
     }
 }
@@ -880,7 +894,11 @@ fn submit_dialog(state: &mut TuiState) {
                         })
                         .collect();
                     let endpoint = state.endpoint_input.trim();
-                    let endpoint_override = if endpoint.is_empty() { None } else { Some(endpoint) };
+                    let endpoint_override = if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint)
+                    };
                     state.provider_service.create_from_preset(
                         preset,
                         api_key,
@@ -1008,11 +1026,16 @@ fn submit_dialog(state: &mut TuiState) {
                 state.set_status("Repository (owner/name) is required");
                 return;
             }
-            match state
-                .skill_service
-                .install_from_github(state.name_input.trim())
-            {
-                Ok(s) => state.set_status(format!("Installed skill: {}", s.name)),
+            let rt = state.runtime.clone();
+            let app = state.active_app;
+            match rt.block_on(
+                state
+                    .skill_service
+                    .install_from_github(state.name_input.trim(), &app),
+            ) {
+                Ok(installed) => {
+                    state.set_status(format!("Installed {} skill(s)", installed.len()))
+                }
                 Err(e) => state.set_status(format!("Install failed: {}", e)),
             }
         }
@@ -1024,10 +1047,7 @@ fn submit_dialog(state: &mut TuiState) {
             Err(e) => state.set_status(format!("Uninstall failed: {}", e)),
         },
         DialogMode::DeleteSession(id) => {
-            match state
-                .session_manager
-                .delete_session(&state.active_app, &id)
-            {
+            match state.session_manager.delete_session(&state.active_app, &id) {
                 Ok(_) => {
                     state.selected_index = 0;
                     state.set_status("Session deleted");
@@ -1080,13 +1100,15 @@ fn submit_dialog(state: &mut TuiState) {
                 return;
             }
             // Preserve any existing fallbacks/extra fields.
-            let mut model = oc::get_default_model().ok().flatten().unwrap_or(
-                oc::OpenClawDefaultModel {
-                    primary: String::new(),
-                    fallbacks: Vec::new(),
-                    extra: std::collections::HashMap::new(),
-                },
-            );
+            let mut model =
+                oc::get_default_model()
+                    .ok()
+                    .flatten()
+                    .unwrap_or(oc::OpenClawDefaultModel {
+                        primary: String::new(),
+                        fallbacks: Vec::new(),
+                        extra: std::collections::HashMap::new(),
+                    });
             model.primary = state.content_input.trim().to_string();
             match oc::set_default_model(&model) {
                 Ok(_) => state.set_status(format!("Default model → {}", model.primary)),
@@ -1267,7 +1289,7 @@ mod tests {
         handle_add(&mut state);
         assert_eq!(state.add_stage, AddProviderStage::SelectPreset);
         draw(&mut state); // preset list renders
-        // Move to the first real preset (row 1) and select it.
+                          // Move to the first real preset (row 1) and select it.
         handle_add_provider_key(&mut state, KeyCode::Down);
         assert_eq!(state.preset_cursor, 1);
         handle_add_provider_key(&mut state, KeyCode::Enter);
@@ -1276,7 +1298,7 @@ mod tests {
         // Name is prefilled from the preset.
         assert_eq!(state.name_input, state.chosen_preset().unwrap().name());
         draw(&mut state); // fields stage renders
-        // Esc from Fields returns to the picker rather than closing.
+                          // Esc from Fields returns to the picker rather than closing.
         handle_add_provider_key(&mut state, KeyCode::Esc);
         assert_eq!(state.add_stage, AddProviderStage::SelectPreset);
         state.close_dialog();

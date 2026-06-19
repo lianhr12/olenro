@@ -50,6 +50,27 @@ impl AppType {
     pub fn as_str(&self) -> &'static str {
         self.config_dir_name().trim_start_matches('.')
     }
+
+    /// All supported app types (用于 skill 跨应用同步/扫描)。
+    pub fn all() -> Vec<AppType> {
+        vec![
+            AppType::Claude,
+            AppType::ClaudeDesktop,
+            AppType::Codex,
+            AppType::Gemini,
+            AppType::OpenCode,
+            AppType::OpenClaw,
+            AppType::Hermes,
+        ]
+    }
+}
+
+impl std::str::FromStr for AppType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        AppType::from_str(s).ok_or(())
+    }
 }
 
 impl Default for AppType {

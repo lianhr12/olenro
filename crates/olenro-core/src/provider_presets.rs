@@ -132,7 +132,10 @@ impl ProviderPreset {
     /// than a pasted API key (GitHub Copilot, Codex-via-ChatGPT, ...).
     pub fn uses_oauth(&self) -> bool {
         self.requires_oauth()
-            || matches!(self.provider_type(), Some("github_copilot") | Some("codex_oauth"))
+            || matches!(
+                self.provider_type(),
+                Some("github_copilot") | Some("codex_oauth")
+            )
     }
 
     /// Candidate request endpoints (for address management / speed test).
@@ -175,7 +178,10 @@ impl ProviderPreset {
     /// Best-effort endpoint to display / prefill, resolved across the differing
     /// per-app shapes (`baseUrl` / `baseURL` / first candidate / env base url).
     pub fn endpoint(&self) -> Option<String> {
-        if let Some(v) = self.str_field("baseUrl").or_else(|| self.str_field("baseURL")) {
+        if let Some(v) = self
+            .str_field("baseUrl")
+            .or_else(|| self.str_field("baseURL"))
+        {
             return Some(v.to_string());
         }
         if let Some(first) = self.endpoint_candidates().first() {
@@ -183,7 +189,11 @@ impl ProviderPreset {
         }
         // Claude / Gemini family keep the base url inside the env block.
         let env = self.raw.get("settingsConfig").and_then(|s| s.get("env"))?;
-        for key in ["ANTHROPIC_BASE_URL", "GOOGLE_GEMINI_BASE_URL", "OPENAI_BASE_URL"] {
+        for key in [
+            "ANTHROPIC_BASE_URL",
+            "GOOGLE_GEMINI_BASE_URL",
+            "OPENAI_BASE_URL",
+        ] {
             if let Some(v) = env.get(key).and_then(Value::as_str) {
                 if !v.is_empty() {
                     return Some(v.to_string());
@@ -299,7 +309,9 @@ fn substitute_templates(value: &mut Value, templates: &HashMap<String, String>) 
                 }
             }
         }
-        Value::Array(arr) => arr.iter_mut().for_each(|v| substitute_templates(v, templates)),
+        Value::Array(arr) => arr
+            .iter_mut()
+            .for_each(|v| substitute_templates(v, templates)),
         Value::Object(obj) => obj
             .values_mut()
             .for_each(|v| substitute_templates(v, templates)),

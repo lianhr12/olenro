@@ -206,6 +206,52 @@ enum SkillCommands {
     Sync {
         app: String,
     },
+    /// Enable/disable a skill for an app (use --off to disable)
+    Toggle {
+        id: String,
+        #[arg(long)]
+        app: String,
+        #[arg(long)]
+        off: bool,
+    },
+    /// Scan app directories for skills not managed by Olenro
+    Scan,
+    /// Import an unmanaged skill into Olenro management
+    Import {
+        directory: String,
+        #[arg(long)]
+        apps: Option<String>,
+    },
+    /// Check installed skills for available updates
+    CheckUpdates,
+    /// List uninstall/update backups
+    Backups,
+    /// Restore a skill from a backup
+    Restore {
+        backup_id: String,
+        #[arg(long)]
+        apps: Option<String>,
+    },
+    /// Manage skill repositories
+    Repo {
+        #[command(subcommand)]
+        subcommand: SkillRepoCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum SkillRepoCommands {
+    List,
+    Add {
+        owner: String,
+        name: String,
+        #[arg(long)]
+        branch: Option<String>,
+    },
+    Remove {
+        owner: String,
+        name: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -360,6 +406,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             SkillCommands::Uninstall { id } => commands::skill::uninstall(&id, &cli_state).await?,
             SkillCommands::Update { id } => commands::skill::update(&id, &cli_state).await?,
             SkillCommands::Sync { app } => commands::skill::sync(&app, &cli_state).await?,
+            SkillCommands::Toggle { id, app, off } => {
+                commands::skill::toggle(&id, &app, !off, &cli_state).await?
+            }
+            SkillCommands::Scan => commands::skill::scan(&cli_state).await?,
+            SkillCommands::Import { directory, apps } => {
+                commands::skill::import(&directory, apps, &cli_state).await?
+            }
+            SkillCommands::CheckUpdates => commands::skill::check_updates(&cli_state).await?,
+            SkillCommands::Backups => commands::skill::backups(&cli_state).await?,
+            SkillCommands::Restore { backup_id, apps } => {
+                commands::skill::restore(&backup_id, apps, &cli_state).await?
+            }
+            SkillCommands::Repo { subcommand } => match subcommand {
+                SkillRepoCommands::List => commands::skill::repo_list(&cli_state).await?,
+                SkillRepoCommands::Add {
+                    owner,
+                    name,
+                    branch,
+                } => commands::skill::repo_add(&owner, &name, branch, &cli_state).await?,
+                SkillRepoCommands::Remove { owner, name } => {
+                    commands::skill::repo_remove(&owner, &name, &cli_state).await?
+                }
+            },
         },
         Commands::Session { subcommand } => match subcommand {
             SessionCommands::List { app, limit } => commands::session::list(app, limit).await?,

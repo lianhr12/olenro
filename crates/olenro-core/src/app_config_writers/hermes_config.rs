@@ -389,9 +389,9 @@ pub fn write_provider_for_switch(
 
     // Read existing config (defaults to an empty mapping) and grab its map.
     let mut config = read_hermes_config()?;
-    let root = config.as_mapping_mut().ok_or_else(|| {
-        AppError::Config("Hermes config is not a valid YAML mapping".to_string())
-    })?;
+    let root = config
+        .as_mapping_mut()
+        .ok_or_else(|| AppError::Config("Hermes config is not a valid YAML mapping".to_string()))?;
 
     // Take (or create) the `model` mapping.
     let mut model = root

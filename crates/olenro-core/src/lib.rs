@@ -26,8 +26,9 @@ pub mod provider_defaults;
 pub mod provider_presets;
 pub mod proxy;
 pub mod services;
-pub mod skills_sh;
 pub mod session_manager;
+pub mod settings;
+pub mod skills_sh;
 
 // Re-exports for convenience
 pub use config::{
