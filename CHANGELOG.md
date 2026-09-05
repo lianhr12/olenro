@@ -21,7 +21,7 @@ First official release of Olenro as an independent project, based on CC Switch
   scheme `olenro://`.
 - Neutralized affiliate/referral tracking parameters in provider preset URLs.
 - Switched auto-updater endpoint to the project's own release channel
-  (github.com/lianhr12/olenro).
+  (github.com/horace68/olenro).
 
 ### Added
 - One-time automatic import from a legacy `~/.cc-switch` configuration on first

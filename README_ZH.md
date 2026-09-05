@@ -6,10 +6,10 @@
 
 ### Claude Code、Codex、Gemini CLI、OpenCode、OpenClaw 和 Hermes Agent 的全方位管理工具
 
-[![Version](https://img.shields.io/github/v/release/lianhr12/olenro?color=blue&label=version)](https://github.com/lianhr12/olenro/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/lianhr12/olenro/releases)
+[![Version](https://img.shields.io/github/v/release/lianhr12/olenro?color=blue&label=version)](https://github.com/horace68/olenro/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/horace68/olenro/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
-[![Downloads](https://img.shields.io/github/downloads/lianhr12/olenro/total)](https://github.com/lianhr12/olenro/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/lianhr12/olenro/total)](https://github.com/horace68/olenro/releases/latest)
 
 
 ### 🌐 唯一官方网站：**[olenro.com](https://olenro.com)**

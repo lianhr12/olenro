@@ -20,6 +20,6 @@
     <binary>olenro</binary>
   </provides>
 
-  <url type="homepage">https://github.com/lianhr12/olenro</url>
-  <url type="bugtracker">https://github.com/lianhr12/olenro/issues</url>
+  <url type="homepage">https://github.com/horace68/olenro</url>
+  <url type="bugtracker">https://github.com/horace68/olenro/issues</url>
 </component>

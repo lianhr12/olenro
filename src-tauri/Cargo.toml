@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "Olenro — Agent Workspace for AI Coding Tools (based on CC Switch, MIT)"
 authors = ["Jason Young", "Horace"]
 license = "MIT"
-repository = "https://github.com/lianhr12/olenro"
+repository = "https://github.com/horace68/olenro"
 edition = "2021"
 rust-version = "1.85.0"
 

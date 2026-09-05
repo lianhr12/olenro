@@ -7,7 +7,7 @@
 # latest `cli-v*` GitHub Release, and installs it to ~/.local/bin (override with
 # OLENRO_INSTALL_DIR). Pin a version with OLENRO_VERSION=cli-v2.0.0.
 #
-# Windows users: use `cargo install --git https://github.com/lianhr12/olenro olenro-cli`
+# Windows users: use `cargo install --git https://github.com/horace68/olenro olenro-cli`
 # or download the .zip from the Releases page.
 
 set -eu

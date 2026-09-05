@@ -6,10 +6,10 @@
 
 ### Der All-in-One-Manager für Claude Code, Codex, Gemini CLI, OpenCode, OpenClaw & Hermes Agent
 
-[![Version](https://img.shields.io/github/v/release/lianhr12/olenro?color=blue&label=version)](https://github.com/lianhr12/olenro/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/lianhr12/olenro/releases)
+[![Version](https://img.shields.io/github/v/release/lianhr12/olenro?color=blue&label=version)](https://github.com/horace68/olenro/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/horace68/olenro/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
-[![Downloads](https://img.shields.io/github/downloads/lianhr12/olenro/total)](https://github.com/lianhr12/olenro/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/lianhr12/olenro/total)](https://github.com/horace68/olenro/releases/latest)
 
 
 ### 🌐 Die einzige offizielle Website: **[olenro.com](https://olenro.com)**

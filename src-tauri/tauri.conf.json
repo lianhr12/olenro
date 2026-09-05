@@ -62,7 +62,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE1RkE1QzlFM0VGOTAwN0MKUldSOEFQaytubHo2cFduL25DL2JGSXEyWFE0TlV1UlJ5VUxKaFNhMEthbTAwbThOSEtya2RsT1UK",
       "endpoints": [
-        "https://github.com/lianhr12/olenro/releases/latest/download/latest.json"
+        "https://github.com/horace68/olenro/releases/latest/download/latest.json"
       ]
     }
   }

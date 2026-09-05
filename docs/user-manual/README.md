@@ -18,5 +18,5 @@
 
 ## Links
 
-- [GitHub Issues](https://github.com/lianhr12/olenro/issues)
-- [GitHub Repository](https://github.com/lianhr12/olenro)
+- [GitHub Issues](https://github.com/horace68/olenro/issues)
+- [GitHub Repository](https://github.com/horace68/olenro)

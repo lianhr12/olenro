@@ -377,13 +377,13 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
 
       if (!displayVersion) {
         await settingsApi.openExternal(
-          "https://github.com/lianhr12/olenro/releases",
+          "https://github.com/horace68/olenro/releases",
         );
         return;
       }
 
       await settingsApi.openExternal(
-        `https://github.com/lianhr12/olenro/releases/tag/${displayVersion}`,
+        `https://github.com/horace68/olenro/releases/tag/${displayVersion}`,
       );
     } catch (error) {
       console.error("[AboutSection] Failed to open release notes", error);
@@ -812,7 +812,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
               size="sm"
               onClick={() =>
                 settingsApi.openExternal(
-                  "https://github.com/lianhr12/olenro",
+                  "https://github.com/horace68/olenro",
                 )
               }
               className="h-8 gap-1.5 text-xs"

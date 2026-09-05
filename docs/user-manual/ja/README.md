@@ -130,5 +130,5 @@ Olenro ユーザーマニュアル
 
 Issue や PR でドキュメントの改善にご協力ください：
 
-- [GitHub Issues](https://github.com/lianhr12/olenro/issues)
-- [GitHub Repository](https://github.com/lianhr12/olenro)
+- [GitHub Issues](https://github.com/horace68/olenro/issues)
+- [GitHub Repository](https://github.com/horace68/olenro)
